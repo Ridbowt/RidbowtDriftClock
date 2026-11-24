@@ -1,7 +1,6 @@
-
 @echo off
-set "SOURCE=D:\111\ClockSaver\RidbowtDriftClock.exe"
-set "TARGET=D:\111\ClockSaver\RidbowtDriftClock.scr"
+set "SOURCE=%~dp0RidbowtDriftClock.exe"
+set "TARGET=%~dp0RidbowtDriftClock.scr"
 
 if not exist "%SOURCE%" (
     echo Source file not found:
