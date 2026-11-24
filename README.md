@@ -41,6 +41,25 @@ Ridbowt Drift Clock is a minimalist screensaver that displays the current time a
 
 - **Operating System:** Windows 10 or Windows 11 (64-bit).
 
+## Compatibility and Testing
+
+Ridbowt Drift Clock has currently been tested on a single-monitor setup.
+
+Multi-monitor configurations and displays with different resolutions have not yet been tested. Although the screensaver may work in these environments, compatibility and proper behavior across all display configurations cannot be guaranteed.
+
+If you encounter any display-related issues, please report them on the project's GitHub Issues page.
+
+## Display Burn-in Warning
+
+**Important:** Prolonged display of a static image may cause image retention or permanent burn-in on certain types of displays.
+
+- **OLED displays:** Prolonged static content may cause uneven pixel wear and permanent image retention (burn-in).
+- **LCD displays:** Some panels may experience temporary image retention.
+
+To reduce potential risks, it is recommended to keep clock movement enabled rather than displaying the clock in a fixed position for extended periods.
+
+Use this screensaver at your own discretion. The developer is not responsible for display damage or image retention resulting from prolonged static display.
+
 ## Building from Source
 
 The project is written in Object Pascal and developed using:
