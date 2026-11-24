@@ -17,7 +17,17 @@ Ridbowt Drift Clock is a minimalist screensaver that displays the current time a
 
 ## Screenshots
 
-*Screenshots will be added later.*
+### Default Clock
+![Default Clock](screenshots/01_default_clock.png)
+
+### US Clock (12-Hour Format)
+![US Clock](screenshots/02_us_clock.png)
+
+### Background Clock
+![Background Clock](screenshots/03_background_clock.png)
+
+### Settings Window
+![Settings Window](screenshots/04_settings_window.png)
 
 ## Installation
 
