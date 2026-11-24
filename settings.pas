@@ -15,8 +15,8 @@ const
   APP_URL     = 'https://github.com/Ridbowt/RidbowtDriftClock';
 
   { веб-ссылки на лицензии; пока заглушки, заработают после загрузки файлов в репозиторий }
-  APP_LICENSE_DSEG = 'https://github.com/Ridbowt/RidbowtDriftClock/blob/main/LICENSES/DSEG7-OFL.txt';
-  APP_LICENSE_NOTO = 'https://github.com/Ridbowt/RidbowtDriftClock/blob/main/LICENSES/NotoSans-OFL.txt';
+  APP_LICENSE_DSEG = 'https://github.com/Ridbowt/RidbowtDriftClock/blob/main/LICENSES/DSEG7/OFL.txt';
+  APP_LICENSE_NOTO = 'https://github.com/Ridbowt/RidbowtDriftClock/blob/main/LICENSES/NotoSans/OFL.txt';
 
   { имя файла настроек оставлено прежним для совместимости со старыми конфигами }
   INI_NAME = 'ClockSaver.ini';
