@@ -1,0 +1,27 @@
+# Lazarus / Free Pascal build files
+lib/
+*.o
+*.obj
+*.ppu
+*.a
+*.compiled
+
+# Lazarus session files
+*.lps
+
+# Backup files
+backup/
+
+# Windows temporary files
+Thumbs.db
+Desktop.ini
+
+# IDE temporary files
+*.bak
+*.tmp
+
+# Release files (distributed separately)
+*.exe
+*.scr
+*.ttf
+ClockSaver.ini
