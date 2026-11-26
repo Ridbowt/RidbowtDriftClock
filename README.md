@@ -31,24 +31,50 @@ Ridbowt Drift Clock is a minimalist screensaver that displays the current time a
 
 ## Installation
 
-### Installed
+### Installing the Screensaver
 
-1. Go to the [Releases](https://github.com/Ridbowt/RidbowtDriftClock/releases) page.
-2. Download the latest ZIP archive.
-3. Extract the archive to a folder of your choice.
-4. Run `_Install_Uninstall.bat`.
-5. Select `[1] Install`.
-6. Follow the instructions displayed by the script.
+1. Download the latest release from the [Releases](https://github.com/Ridbowt/RidbowtDriftClock/releases) page.
+2. Extract `RidbowtDriftClock.scr` from the downloaded archive.
+3. Right-click `RidbowtDriftClock.scr`.
+4. Select **Configure** from the context menu.
+5. The Ridbowt Drift Clock Control Panel will open.
+6. Click **Install** to install and register the screensaver with Windows.
+7. If Windows displays a User Account Control (UAC) prompt, approve it to continue.
 
-The screensaver will be installed into the Windows system folder. Settings are stored in `%APPDATA%\RidbowtDriftClock\ClockSaver.ini`.
+### Control Panel
 
-To uninstall the screensaver, run `_Install_Uninstall.bat` again and select the uninstall option. You can choose whether to keep or remove your settings.
+The Control Panel can be opened by right-clicking `RidbowtDriftClock.scr` and selecting **Configure**.
 
-### Portable
+It provides four options:
 
-No installation is required. Simply extract the ZIP archive to a folder of your choice and run `RidbowtDriftClock.scr` directly.
+- **Install** — installs and registers the screensaver with Windows.
+- **Run** — launches the screensaver immediately.
+- **Settings** — opens the screensaver configuration window.
+- **Uninstall** — removes the installed screensaver from the system.
 
-In Portable mode, settings are stored alongside the screensaver executable.
+### Uninstalling
+
+The uninstallation method depends on whether you are using the portable or installed version.
+
+**Portable Mode**
+
+If you are using the screensaver without installing it:
+
+1. Right-click `RidbowtDriftClock.scr`.
+2. Select **Configure**.
+3. The Control Panel will open.
+4. Click **Uninstall**.
+
+**Installed Mode**
+
+If you have installed the screensaver and deleted the downloaded ZIP archive or the original `.scr` file:
+
+1. Open the Windows Screen Saver Settings window.
+2. Select **Ridbowt Drift Clock** as your screen saver, if it is not already selected.
+3. Click **Settings** to open the screensaver configuration window.
+4. Click the **Uninstall** link at the bottom of the window.
+
+During uninstallation, you can choose whether to keep or delete your saved user settings.
 
 ## System Requirements
 
