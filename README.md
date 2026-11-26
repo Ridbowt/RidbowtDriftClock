@@ -31,11 +31,24 @@ Ridbowt Drift Clock is a minimalist screensaver that displays the current time a
 
 ## Installation
 
+### Installed
+
 1. Go to the [Releases](https://github.com/Ridbowt/RidbowtDriftClock/releases) page.
 2. Download the latest ZIP archive.
 3. Extract the archive to a folder of your choice.
-4. Right-click `RidbowtDriftClock.scr` and select **Install**.
-5. Select Ridbowt Drift Clock in Windows Screen Saver Settings.
+4. Run `_Install_Uninstall.bat`.
+5. Select `[1] Install`.
+6. Follow the instructions displayed by the script.
+
+The screensaver will be installed into the Windows system folder. Settings are stored in `%APPDATA%\RidbowtDriftClock\ClockSaver.ini`.
+
+To uninstall the screensaver, run `_Install_Uninstall.bat` again and select the uninstall option. You can choose whether to keep or remove your settings.
+
+### Portable
+
+No installation is required. Simply extract the ZIP archive to a folder of your choice and run `RidbowtDriftClock.scr` directly.
+
+In Portable mode, settings are stored alongside the screensaver executable.
 
 ## System Requirements
 
