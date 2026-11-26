@@ -6,7 +6,7 @@ interface
 
 uses
   Classes, SysUtils, Forms, Controls, Graphics, ExtCtrls, LCLType, Windows,
-  Settings, background;
+  Settings, background, Launcher;
 
 type
   TForm1 = class(TForm)
@@ -29,6 +29,7 @@ type
     FPreview: Boolean;
     FPreviewWnd: HWND;
     FConfigMode: Boolean;
+    FStartupAction: Integer;
     FOwnerWnd: HWND;
     FReloadMs: Integer;
     FBackground: TBackground;
@@ -661,8 +662,16 @@ begin
     Inc(i);
   end;
 
+  if ParamCount >= 1 then
+  begin
+    p := LowerCase(ParamStr(1));
+    if p = '/install' then FStartupAction := 2
+    else if p = '/uninstall-keep' then FStartupAction := 3
+    else if p = '/uninstall-delete' then FStartupAction := 4;
+  end;
+
   if ParamCount = 0 then
-    cfgMode := True;
+    FStartupAction := 1;
 
   if (not cfgMode) and FPreview and not Windows.IsWindow(FPreviewWnd) then
   begin
@@ -676,8 +685,11 @@ begin
   end;
 
   if cfgMode then
+    FStartupAction := 5;
+
+  if FStartupAction <> 0 then
   begin
-    FConfigMode := True;
+    FConfigMode := cfgMode;
     Application.ShowMainForm := False;
     BorderStyle   := bsNone;
     ShowInTaskBar := stNever;
@@ -813,10 +825,16 @@ end;
 
 procedure TForm1.Tick(Sender: TObject);
 begin
-  if FConfigMode then
+  if FStartupAction <> 0 then
   begin
     FTimer.Enabled := False;
-    ShowSettingsDialog(FOwnerWnd);
+    case FStartupAction of
+      1: ShowControlPanel;
+      2: RunInstallWorker;
+      3: RunUninstallWorker(False);
+      4: RunUninstallWorker(True);
+      5: ShowSettingsDialog(FOwnerWnd);
+    end;
     Application.Terminate;
     Exit;
   end;

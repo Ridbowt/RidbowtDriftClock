@@ -10,7 +10,7 @@ uses
 
 const
   APP_NAME    = 'RidbowtDriftClock';
-  APP_VERSION = '1.1.0';
+  APP_VERSION = '1.2.0';
   APP_DATE    = '2026-11-26';
   APP_URL     = 'https://github.com/Ridbowt/RidbowtDriftClock';
   APP_LICENSE_DSEG = 'https://github.com/Ridbowt/RidbowtDriftClock/blob/main/LICENSES/DSEG7/OFL.txt';
@@ -44,7 +44,7 @@ type
     ClockColor: Integer;
     WinWidth: Integer;
     WinHeight: Integer;
-    FilePath: string;          // единый путь к INI на весь запуск
+    FilePath: string;
     LastError: string;
     constructor Create;
     procedure Load;
@@ -54,6 +54,7 @@ type
 
 var
   Cfg: TSettings;
+  UninstallRequest: procedure;
 
 procedure ShowSettingsDialog(AOwnerWnd: HWND = 0);
 
@@ -86,8 +87,6 @@ function ReleaseMutex(hMutex: THandle): LongBool; stdcall;
   external 'kernel32.dll' name 'ReleaseMutex';
 function FindWindowW(lpClassName, lpWindowName: PWideChar): THandle; stdcall;
   external 'user32.dll' name 'FindWindowW';
-
-{ ================= определение режима хранения ================= }
 
 function GetLongPathNameW(lpszShortPath: PWideChar; lpszLongPath: PWideChar;
   cchBuffer: DWord): DWord; stdcall; external 'kernel32.dll' name 'GetLongPathNameW';
@@ -175,8 +174,6 @@ begin
       Copy(Result, Length(prefix) + 1, MaxInt);
 end;
 
-{ ================= палитра ================= }
-
 function ClockColorName(AIndex: Integer): string;
 begin
   case AIndex of
@@ -257,8 +254,6 @@ begin
   else Result := 0;
 end;
 
-{ ================= хранилище ================= }
-
 constructor TSettings.Create;
 begin
   inherited Create;
@@ -286,7 +281,7 @@ var
   sFmt: string;
   oldInt: Integer;
 begin
-  FilePath := ResolveSettingsPath;   // режим заново на каждый запуск/чтение
+  FilePath := ResolveSettingsPath;
   ShowSeconds := True;
   BlinkColons := True;
   ShowFps := False;
@@ -302,7 +297,6 @@ begin
   WinHeight := DEF_CLIENT_H;
   FStamp := 0;
 
-  // автосоздание папки и файла с дефолтами, если их нет
   if not FileExists(FilePath) then
   begin
     ForceDirectories(ExtractFileDir(FilePath));
@@ -396,8 +390,6 @@ begin
     Result := True;
   end;
 end;
-
-{ ================= графитовые контролы ================= }
 
 type
   TPickEvent = procedure(AIndex: Integer) of object;
@@ -552,6 +544,7 @@ type
     lblDiagHint: TLabel;
     lblFooter: TLabel;
     btnClose: TGButton;
+    lblUninstall: TLabel;
     FUpdating: Boolean;
     FSavedSeconds: Boolean;
     FSavedBlink: Boolean;
@@ -570,14 +563,13 @@ type
     procedure Layout;
     procedure Resized(Sender: TObject);
     procedure CloseClicked(Sender: TObject);
+    procedure UninstallClick(Sender: TObject);
     procedure UrlClick(Sender: TObject);
     procedure LicenseClick(Sender: TObject);
     function MakeLabel(AParent: TWinControl; const AText: string; AMuted: Boolean): TLabel;
   public
     procedure Build;
   end;
-
-{ ================= TGBlock ================= }
 
 constructor TGBlock.Create(AOwner: TComponent);
 begin
@@ -604,8 +596,6 @@ begin
   Canvas.MoveTo(16, 34);
   Canvas.LineTo(Width - 16, 34);
 end;
-
-{ ================= TGCheck ================= }
 
 constructor TGCheck.Create(AOwner: TComponent);
 begin
@@ -719,8 +709,6 @@ begin
   inherited DoExit;
   Invalidate;
 end;
-
-{ ================= TGList ================= }
 
 constructor TGList.Create(AOwner: TComponent);
 begin
@@ -847,8 +835,6 @@ begin
     Key := 0;
   end;
 end;
-
-{ ================= TGCombo ================= }
 
 constructor TGCombo.Create(AOwner: TComponent);
 begin
@@ -1031,8 +1017,6 @@ begin
   Invalidate;
 end;
 
-{ ================= TGButton ================= }
-
 constructor TGButton.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
@@ -1115,8 +1099,6 @@ begin
   Invalidate;
 end;
 
-{ ================= TGSwatch ================= }
-
 constructor TGSwatch.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
@@ -1153,8 +1135,6 @@ begin
   Canvas.Pen.Width := 1;
   Canvas.RoundRect(0, 0, Width, Height, 6, 6);
 end;
-
-{ ================= форма ================= }
 
 function TGSettingsForm.MakeLabel(AParent: TWinControl; const AText: string; AMuted: Boolean): TLabel;
 begin
@@ -1362,7 +1342,7 @@ begin
     chkFps.OnChange := @Changed;
     lblDiagHint := MakeLabel(blkDiag, 'Frame counter in the top-left corner of the screensaver.', True);
 
-        lblFooter := MakeLabel(Self, 'All changes are saved instantly to ' + DisplaySettingsPath, True);
+    lblFooter := MakeLabel(Self, 'All changes are saved instantly to ' + DisplaySettingsPath, True);
     lblFooter.WordWrap := True;
     lblFooter.ShowHint := True;
     lblFooter.Hint := Cfg.FilePath;
@@ -1371,6 +1351,14 @@ begin
     btnClose.Parent := Self;
     btnClose.CaptionText := 'Close';
     btnClose.OnClick := @CloseClicked;
+
+    lblUninstall := MakeLabel(Self, 'Uninstall…', True);
+    lblUninstall.Font.Color := COL_AMBER;
+    lblUninstall.Font.Style := [fsUnderline];
+    lblUninstall.WordWrap := False;
+    lblUninstall.Cursor := crHandPoint;
+    lblUninstall.OnClick := @UninstallClick;
+    lblUninstall.Visible := Assigned(UninstallRequest);
   finally
     FUpdating := False;
   end;
@@ -1447,6 +1435,7 @@ begin
   lblDiagHint.SetBounds(16, 82, bw, 50);
 
   lblFooter.SetBounds(m, ClientHeight - 46, ClientWidth - 2 * m - 150, 32);
+  lblUninstall.SetBounds(ClientWidth - m - 250, ClientHeight - 40, 120, 20);
   btnClose.SetBounds(ClientWidth - m - 120, ClientHeight - 46, 120, 32);
 end;
 
@@ -1488,6 +1477,12 @@ end;
 procedure TGSettingsForm.CloseClicked(Sender: TObject);
 begin
   ModalResult := mrClose;
+end;
+
+procedure TGSettingsForm.UninstallClick(Sender: TObject);
+begin
+  if Assigned(UninstallRequest) then
+    UninstallRequest;
 end;
 
 procedure TGSettingsForm.CommitChanges;

@@ -1,6 +1,6 @@
 1 VERSIONINFO
-FILEVERSION     1,1,0,0
-PRODUCTVERSION  1,1,0,0
+FILEVERSION     1,2,0,0
+PRODUCTVERSION  1,2,0,0
 FILEFLAGSMASK   0x3fL
 FILEFLAGS       0x0L
 FILEOS          0x00040004L
@@ -13,12 +13,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName",      "Ridbowt"
             VALUE "FileDescription",  "RidbowtDriftClock - drifting LED clock screensaver"
-            VALUE "FileVersion",      "1.1.0.0"
+            VALUE "FileVersion",      "1.2.0.0"
             VALUE "InternalName",     "RidbowtDriftClock"
             VALUE "LegalCopyright",   "Copyright (c) 2026 Ridbowt"
             VALUE "OriginalFilename", "RidbowtDriftClock.scr"
             VALUE "ProductName",      "RidbowtDriftClock"
-            VALUE "ProductVersion",   "1.1.0.0"
+            VALUE "ProductVersion",   "1.2.0.0"
             VALUE "Comments",         "Release date: 2026-11-26 | https://github.com/Ridbowt/RidbowtDriftClock"
         END
     END
