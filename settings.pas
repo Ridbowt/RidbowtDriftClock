@@ -10,7 +10,7 @@ uses
 
 const
   APP_NAME    = 'RidbowtDriftClock';
-  APP_VERSION = '1.2.0';
+  APP_VERSION = '1.3.0';
   APP_DATE    = '2026-11-26';
   APP_URL     = 'https://github.com/Ridbowt/RidbowtDriftClock';
   APP_LICENSE_DSEG = 'https://github.com/Ridbowt/RidbowtDriftClock/blob/main/LICENSES/DSEG7/OFL.txt';
@@ -566,6 +566,7 @@ type
     procedure UninstallClick(Sender: TObject);
     procedure UrlClick(Sender: TObject);
     procedure LicenseClick(Sender: TObject);
+    function Sc(V: Integer): Integer;
     function MakeLabel(AParent: TWinControl; const AText: string; AMuted: Boolean): TLabel;
   public
     procedure Build;
@@ -581,20 +582,34 @@ begin
 end;
 
 procedure TGBlock.Paint;
+var
+  px, ty, ly, ppi: Integer;
 begin
   Canvas.Brush.Style := bsSolid;
   Canvas.Brush.Color := COL_BLOCK;
   Canvas.FillRect(ClientRect);
+
   Canvas.Font.Name := 'Segoe UI';
   Canvas.Font.Size := 9;
   Canvas.Font.Style := [fsBold];
   Canvas.Font.Color := COL_MUTED;
+
+  ppi := 96;
+  if GetParentForm(Self) <> nil then
+    ppi := GetParentForm(Self).PixelsPerInch;
+
+  px := MulDiv(16, ppi, 96);
+  ty := MulDiv(12, ppi, 96);
+
   Canvas.Brush.Style := bsClear;
-  Canvas.TextOut(16, 13, FTitle);
+  Canvas.TextOut(px, ty, FTitle);
+
+  // линия всегда ниже текста, независимо от масштаба
+  ly := ty + Canvas.TextHeight(FTitle) + MulDiv(6, ppi, 96);
   Canvas.Pen.Color := COL_LINE;
   Canvas.Pen.Width := 1;
-  Canvas.MoveTo(16, 34);
-  Canvas.LineTo(Width - 16, 34);
+  Canvas.MoveTo(px, ly);
+  Canvas.LineTo(Width - px, ly);
 end;
 
 constructor TGCheck.Create(AOwner: TComponent);
@@ -628,12 +643,20 @@ end;
 
 procedure TGCheck.Paint;
 var
-  by, ty: Integer;
+  by, ty, bs, sc5, ppi: Integer;
 begin
   Canvas.Brush.Style := bsSolid;
   Canvas.Brush.Color := COL_BLOCK;
   Canvas.FillRect(ClientRect);
-  by := (Height - 18) div 2;
+
+  ppi := 96;
+  if GetParentForm(Self) <> nil then
+    ppi := GetParentForm(Self).PixelsPerInch;
+
+  bs := MulDiv(18, ppi, 96);
+  sc5 := MulDiv(5, ppi, 96);
+  by := (Height - bs) div 2;
+
   if FChecked then
   begin
     Canvas.Brush.Color := COL_AMBER;
@@ -642,24 +665,36 @@ begin
   else
   begin
     Canvas.Brush.Color := COL_FIELD;
-    if FHover then Canvas.Pen.Color := COL_AMBER else Canvas.Pen.Color := COL_LINE;
+    if FHover then
+      Canvas.Pen.Color := COL_AMBER
+    else
+      Canvas.Pen.Color := COL_LINE;
   end;
+
   Canvas.Pen.Width := 1;
-  Canvas.RoundRect(0, by, 18, by + 18, 5, 5);
+  Canvas.RoundRect(0, by, bs, by + bs, sc5, sc5);
+
   if FChecked then
   begin
     Canvas.Pen.Color := COL_BG;
     Canvas.Pen.Width := 2;
-    Canvas.Polyline([Point(4, by + 9), Point(7, by + 12), Point(13, by + 5)]);
+    Canvas.Polyline([
+      Point(MulDiv(4, ppi, 96), by + MulDiv(9, ppi, 96)),
+      Point(MulDiv(7, ppi, 96), by + MulDiv(12, ppi, 96)),
+      Point(MulDiv(13, ppi, 96), by + MulDiv(5, ppi, 96))
+    ]);
     Canvas.Pen.Width := 1;
   end;
+
   Canvas.Font.Name := 'Segoe UI';
   Canvas.Font.Size := 9;
   Canvas.Font.Style := [];
   Canvas.Font.Color := COL_TEXT;
   Canvas.Brush.Style := bsClear;
+
   ty := (Height - Canvas.TextHeight('Ag')) div 2;
-  Canvas.TextOut(28, ty, FCaption);
+  Canvas.TextOut(MulDiv(28, ppi, 96), ty, FCaption);
+
   if Focused then
     Canvas.DrawFocusRect(Rect(26, 1, Width - 1, Height - 1));
 end;
@@ -724,19 +759,23 @@ end;
 
 function TGList.RowAt(Y: Integer): Integer;
 var
-  i: Integer;
+  i, rh, tp: Integer;
 begin
   Result := -1;
   if FItems = nil then Exit;
-  i := (Y - 4) div ROW_H;
-  if (i >= 0) and (i < FItems.Count) and (Y >= 4) then
+  rh := MulDiv(ROW_H, GetParentForm(Self).PixelsPerInch, 96);
+  tp := MulDiv(4, GetParentForm(Self).PixelsPerInch, 96);
+  i := (Y - tp) div rh;
+  if (i >= 0) and (i < FItems.Count) and (Y >= tp) then
     Result := i;
 end;
 
 procedure TGList.Paint;
 var
-  i, y: Integer;
+  i, y, rh, tp: Integer;
 begin
+  rh := MulDiv(ROW_H, GetParentForm(Self).PixelsPerInch, 96);
+  tp := MulDiv(4, GetParentForm(Self).PixelsPerInch, 96);
   Canvas.Brush.Style := bsSolid;
   Canvas.Brush.Color := COL_BLOCK;
   Canvas.FillRect(ClientRect);
@@ -751,12 +790,12 @@ begin
   Canvas.Brush.Style := bsClear;
   for i := 0 to FItems.Count - 1 do
   begin
-    y := 4 + i * ROW_H;
+    y := tp + i * rh;
     if i = FHover then
     begin
       Canvas.Brush.Style := bsSolid;
       Canvas.Brush.Color := COL_FIELD_HI;
-      Canvas.FillRect(Rect(3, y, Width - 3, y + ROW_H));
+      Canvas.FillRect(Rect(3, y, Width - 3, y + rh));
       Canvas.Brush.Style := bsClear;
     end;
     if i = FSelected then
@@ -769,7 +808,7 @@ begin
     end
     else
       Canvas.Font.Color := COL_TEXT;
-    Canvas.TextOut(20, y + (ROW_H - Canvas.TextHeight('Ag')) div 2, FItems[i]);
+    Canvas.TextOut(20, y + (rh - Canvas.TextHeight('Ag')) div 2, FItems[i]);
   end;
 end;
 
@@ -905,7 +944,7 @@ procedure TGCombo.OpenPopup;
 var
   lst: TGList;
   p: TPoint;
-  h, px, py: Integer;
+  h, px, py, rh, tp: Integer;
 begin
   if FPopup <> nil then
   begin
@@ -913,7 +952,9 @@ begin
     Exit;
   end;
   if FItems.Count = 0 then Exit;
-  h := 8 + FItems.Count * ROW_H;
+  rh := MulDiv(ROW_H, GetParentForm(Self).PixelsPerInch, 96);
+  tp := MulDiv(4, GetParentForm(Self).PixelsPerInch, 96);
+  h := 2 * tp + FItems.Count * rh;
   FPopup := TForm.CreateNew(nil);
   FPopup.BorderStyle := bsNone;
   FPopup.FormStyle := fsStayOnTop;
@@ -1149,6 +1190,11 @@ begin
   Result.WordWrap := True;
 end;
 
+function TGSettingsForm.Sc(V: Integer): Integer;
+begin
+  Result := MulDiv(V, PixelsPerInch, 96);
+end;
+
 procedure TGSettingsForm.UrlClick(Sender: TObject);
 begin
   ShellExecuteA(0, 'open', PChar(APP_URL), nil, nil, 1);
@@ -1179,15 +1225,19 @@ begin
 
   w := Cfg.WinWidth;
   h := Cfg.WinHeight;
-  if w > Screen.Width - 40 then w := Screen.Width - 40;
-  if h > Screen.Height - 80 then h := Screen.Height - 80;
   if w < MIN_CLIENT_W then w := MIN_CLIENT_W;
   if h < MIN_CLIENT_H then h := MIN_CLIENT_H;
+
+  // логические (96 DPI) единицы -> физические пиксели текущего масштаба
+  w := MulDiv(w, PixelsPerInch, 96);
+  h := MulDiv(h, PixelsPerInch, 96);
+  if w > Screen.Width - 40 then w := Screen.Width - 40;
+  if h > Screen.Height - 80 then h := Screen.Height - 80;
   ClientWidth := w;
   ClientHeight := h;
 
-  Constraints.MinWidth := MIN_CLIENT_W + 16;
-  Constraints.MinHeight := MIN_CLIENT_H + 40;
+  Constraints.MinWidth := MulDiv(MIN_CLIENT_W + 16, PixelsPerInch, 96);
+  Constraints.MinHeight := MulDiv(MIN_CLIENT_H + 40, PixelsPerInch, 96);
   OnResize := @Resized;
 
   FUpdating := True;
@@ -1383,23 +1433,23 @@ procedure TGSettingsForm.Layout;
 var
   m, g, cw, y1, y2, h1, h2, bw: Integer;
 begin
-  m := 20;
-  g := 16;
+  m := Sc(20);
+  g := Sc(16);
   cw := (ClientWidth - 2 * m - 2 * g) div 3;
-  if cw < 200 then cw := 200;
-  y1 := 78;
-  h1 := 182;
+  if cw < Sc(200) then cw := Sc(200);
+  y1 := Sc(78);
+  h1 := Sc(182);
   y2 := y1 + h1 + g;
-  h2 := 150;
-  bw := cw - 32;
+  h2 := Sc(150);
+  bw := cw - Sc(32);
 
-  pnlLed.SetBounds(m, 26, 8, 8);
-  lblTitle.SetBounds(m + 16, 14, 320, 26);
-  lblSub.SetBounds(m + 16, 42, 460, 18);
-  lblVersion.SetBounds(ClientWidth - m - 340, 18, 340, 18);
-  lblUrl.SetBounds(ClientWidth - m - 340, 40, 340, 18);
-  lblLicNoto.SetBounds(ClientWidth - m - 100, 60, 100, 16);
-  lblLicDseg.SetBounds(ClientWidth - m - 206, 60, 90, 16);
+  pnlLed.SetBounds(m, Sc(26), Sc(8), Sc(8));
+  lblTitle.SetBounds(m + Sc(16), Sc(14), Sc(320), Sc(26));
+  lblSub.SetBounds(m + Sc(16), Sc(42), Sc(460), Sc(18));
+  lblVersion.SetBounds(ClientWidth - m - Sc(340), Sc(18), Sc(340), Sc(18));
+  lblUrl.SetBounds(ClientWidth - m - Sc(340), Sc(40), Sc(340), Sc(18));
+  lblLicNoto.SetBounds(ClientWidth - m - Sc(100), Sc(60), Sc(100), Sc(16));
+  lblLicDseg.SetBounds(ClientWidth - m - Sc(206), Sc(60), Sc(90), Sc(16));
 
   blkTime.SetBounds(m, y1, cw, h1);
   blkDate.SetBounds(m, y2, cw, h2);
@@ -1408,42 +1458,46 @@ begin
   blkColor.SetBounds(m + 2 * (cw + g), y1, cw, h1);
   blkDiag.SetBounds(m + 2 * (cw + g), y2, cw, h2);
 
-  lblTimeFmt.SetBounds(16, 42, bw, 16);
-  cmbTime.SetBounds(16, 60, bw, 30);
-  chkSeconds.SetBounds(16, 102, bw, 26);
-  chkBlink.SetBounds(16, 132, bw, 26);
+  lblTimeFmt.SetBounds(Sc(16), Sc(42), bw, Sc(16));
+  cmbTime.SetBounds(Sc(16), Sc(60), bw, Sc(30));
+  chkSeconds.SetBounds(Sc(16), Sc(102), bw, Sc(26));
+  chkBlink.SetBounds(Sc(16), Sc(132), bw, Sc(26));
 
-  lblDateFmt.SetBounds(16, 42, bw, 16);
-  cmbDate.SetBounds(16, 60, bw, 30);
-  chkRussian.SetBounds(16, 96, bw, 26);
-  lblDateHint.SetBounds(16, 126, bw, 18);
+  lblDateFmt.SetBounds(Sc(16), Sc(42), bw, Sc(16));
+  cmbDate.SetBounds(Sc(16), Sc(60), bw, Sc(30));
+  chkRussian.SetBounds(Sc(16), Sc(96), bw, Sc(26));
+  lblDateHint.SetBounds(Sc(16), Sc(126), bw, Sc(18));
 
-  chkCenter.SetBounds(16, 46, bw, 26);
-  chkFast.SetBounds(16, 78, bw, 26);
-  lblMoveHint.SetBounds(16, 114, bw, 44);
+  chkCenter.SetBounds(Sc(16), Sc(46), bw, Sc(26));
+  chkFast.SetBounds(Sc(16), Sc(78), bw, Sc(26));
+  lblMoveHint.SetBounds(Sc(16), Sc(114), bw, Sc(44));
 
-  chkAtmo.SetBounds(16, 46, bw, 26);
-  chkDim.SetBounds(16, 78, bw, 26);
-  lblLookHint.SetBounds(16, 114, bw, 30);
+  chkAtmo.SetBounds(Sc(16), Sc(46), bw, Sc(26));
+  chkDim.SetBounds(Sc(16), Sc(78), bw, Sc(26));
+  lblLookHint.SetBounds(Sc(16), Sc(114), bw, Sc(30));
 
-  lblColor.SetBounds(16, 42, bw, 16);
-  cmbColor.SetBounds(16, 60, bw - 56, 30);
-  swatch.SetBounds(16 + bw - 44, 60, 44, 30);
-  lblColorHint.SetBounds(16, 102, bw, 44);
+  lblColor.SetBounds(Sc(16), Sc(42), bw, Sc(16));
+  cmbColor.SetBounds(Sc(16), Sc(60), bw - Sc(56), Sc(30));
+  swatch.SetBounds(Sc(16) + bw - Sc(44), Sc(60), Sc(44), Sc(30));
+  lblColorHint.SetBounds(Sc(16), Sc(102), bw, Sc(44));
 
-  chkFps.SetBounds(16, 46, bw, 26);
-  lblDiagHint.SetBounds(16, 82, bw, 50);
+  chkFps.SetBounds(Sc(16), Sc(46), bw, Sc(26));
+  lblDiagHint.SetBounds(Sc(16), Sc(82), bw, Sc(50));
 
-  lblFooter.SetBounds(m, ClientHeight - 46, ClientWidth - 2 * m - 150, 32);
-  lblUninstall.SetBounds(ClientWidth - m - 250, ClientHeight - 40, 120, 20);
-  btnClose.SetBounds(ClientWidth - m - 120, ClientHeight - 46, 120, 32);
+  lblFooter.SetBounds(m, ClientHeight - Sc(46), ClientWidth - 2 * m - Sc(150), Sc(32));
+  lblUninstall.SetBounds(ClientWidth - m - Sc(250), ClientHeight - Sc(40), Sc(120), Sc(20));
+  btnClose.SetBounds(ClientWidth - m - Sc(120), ClientHeight - Sc(46), Sc(120), Sc(32));
 end;
 
 procedure TGSettingsForm.Resized(Sender: TObject);
+var
+  mw, mh: Integer;
 begin
   if FUpdating then Exit;
-  if ClientWidth < MIN_CLIENT_W then ClientWidth := MIN_CLIENT_W;
-  if ClientHeight < MIN_CLIENT_H then ClientHeight := MIN_CLIENT_H;
+  mw := MulDiv(MIN_CLIENT_W, PixelsPerInch, 96);
+  mh := MulDiv(MIN_CLIENT_H, PixelsPerInch, 96);
+  if ClientWidth < mw then ClientWidth := mw;
+  if ClientHeight < mh then ClientHeight := mh;
   Layout;
 end;
 
@@ -1570,6 +1624,7 @@ var
   hwndExisting: THandle;
   capW: WideString;
   i: Integer;
+  lw, lh: Integer;
 begin
   hMutex := CreateMutexW(nil, True,
     PWideChar(UTF8Decode('Local\RidbowtDriftClockSettings')));
@@ -1604,10 +1659,12 @@ begin
       Windows.SetWindowLongPtr(F.Handle, GWLP_HWNDPARENT, AOwnerWnd);
     F.ShowModal;
 
-    if (F.ClientWidth <> Cfg.WinWidth) or (F.ClientHeight <> Cfg.WinHeight) then
+    lw := MulDiv(F.ClientWidth, 96, F.PixelsPerInch);
+    lh := MulDiv(F.ClientHeight, 96, F.PixelsPerInch);
+    if (lw <> Cfg.WinWidth) or (lh <> Cfg.WinHeight) then
     begin
-      Cfg.WinWidth := F.ClientWidth;
-      Cfg.WinHeight := F.ClientHeight;
+      Cfg.WinWidth := lw;
+      Cfg.WinHeight := lh;
       Cfg.Save;
     end;
   finally

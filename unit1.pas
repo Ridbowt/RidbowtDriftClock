@@ -42,6 +42,7 @@ type
     FFpsFrames: Integer;
     FFpsLast: Int64;
     FFpsText: string;
+	FIsSecondary: Boolean;
 
     procedure StartClockSaver;
     procedure SetupSaverMode;
@@ -67,6 +68,9 @@ var
 implementation
 
 {$R *.lfm}
+
+var
+  GSecondaryForms: array of TForm1;
 
 const
   DIVIDER    = 4;
@@ -524,6 +528,7 @@ end;
 constructor TForm1.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
+  Scaled := False; // <--- ДОБАВИТЬ ЭТО
   StartClockSaver;
 end;
 
@@ -536,6 +541,8 @@ procedure TForm1.StartClockSaver;
 begin
   if FStarted then Exit;
   FStarted := True;
+
+  if FIsSecondary then Exit;  // вторичные формы настраиваются вручную
 
   try
     SetupSaverMode;
@@ -728,9 +735,76 @@ begin
     FormStyle   := fsStayOnTop;
     WindowState := wsMaximized;
     Cursor      := crNone;
-    SetBounds(0, 0, Screen.Width, Screen.Height);
+
+    // главная форма = первый монитор
+    SetBounds(Screen.Monitors[0].Left,
+              Screen.Monitors[0].Top,
+              Screen.Monitors[0].Width,
+              Screen.Monitors[0].Height);
     FStartX := Mouse.CursorPos.X;
     FStartY := Mouse.CursorPos.Y;
+
+    // дополнительные мониторы
+    if Screen.MonitorCount > 1 then
+    begin
+      SetLength(GSecondaryForms, Screen.MonitorCount - 1);
+      for i := 0 to Screen.MonitorCount - 2 do
+      begin
+        GSecondaryForms[i] := TForm1.CreateNew(nil);
+        GSecondaryForms[i].FIsSecondary := True;
+        GSecondaryForms[i].BorderStyle   := bsNone;
+        GSecondaryForms[i].Color         := clBlack;
+        GSecondaryForms[i].DoubleBuffered := True;
+        GSecondaryForms[i].KeyPreview    := True;
+        GSecondaryForms[i].ShowInTaskBar := stNever;
+        GSecondaryForms[i].FormStyle     := fsStayOnTop;
+        GSecondaryForms[i].Cursor        := crNone;
+        GSecondaryForms[i].SetBounds(
+          Screen.Monitors[i + 1].Left,
+          Screen.Monitors[i + 1].Top,
+          Screen.Monitors[i + 1].Width,
+          Screen.Monitors[i + 1].Height);
+        GSecondaryForms[i].FStartX := Mouse.CursorPos.X;
+        GSecondaryForms[i].FStartY := Mouse.CursorPos.Y;
+        GSecondaryForms[i].OnPaint     := @GSecondaryForms[i].FormPaint;
+        GSecondaryForms[i].OnResize    := @GSecondaryForms[i].FormResize;
+        GSecondaryForms[i].OnDestroy   := @GSecondaryForms[i].FormDestroy;
+        GSecondaryForms[i].OnKeyDown   := @GSecondaryForms[i].FormKeyDown;
+        GSecondaryForms[i].OnMouseMove := @GSecondaryForms[i].FormMouseMove;
+        GSecondaryForms[i].OnMouseDown := @GSecondaryForms[i].FormMouseDown;
+        GSecondaryForms[i].OnShow      := @GSecondaryForms[i].FormShown;
+
+        // инициализация полей
+        GSecondaryForms[i].FPreview    := False;
+        GSecondaryForms[i].FPreviewWnd := 0;
+        GSecondaryForms[i].FOwnerWnd   := 0;
+        GSecondaryForms[i].FBackground := nil;
+        GSecondaryForms[i].FSprite     := nil;
+        GSecondaryForms[i].FSpriteDC   := 0;
+        GSecondaryForms[i].FSpriteSec  := 0;
+        GSecondaryForms[i].FInited     := False;
+        GSecondaryForms[i].FFpsFrames  := 0;
+        GSecondaryForms[i].FFpsLast    := 0;
+        GSecondaryForms[i].FFpsText    := '';
+
+        Randomize;
+        GSecondaryForms[i].FVX := SPEED_X * TIMER_MS / 1000;
+        GSecondaryForms[i].FVY := SPEED_Y * TIMER_MS / 1000;
+        if Random(2) = 0 then GSecondaryForms[i].FVX := -GSecondaryForms[i].FVX;
+        if Random(2) = 0 then GSecondaryForms[i].FVY := -GSecondaryForms[i].FVY;
+        GSecondaryForms[i].ApplySpeed;
+
+        if Cfg.UseAtmosphericBackground then
+          GSecondaryForms[i].EnsureBackground;
+
+        GSecondaryForms[i].FTimer := TTimer.Create(GSecondaryForms[i]);
+        GSecondaryForms[i].FTimer.Interval := TIMER_MS;
+        GSecondaryForms[i].FTimer.OnTimer := @GSecondaryForms[i].Tick;
+        GSecondaryForms[i].FTimer.Enabled := True;
+
+        GSecondaryForms[i].Show;
+      end;
+    end;
   end;
 
   Randomize;
@@ -756,6 +830,14 @@ end;
 
 procedure TForm1.FormDestroy(Sender: TObject);
 begin
+  if not FIsSecondary then
+  begin
+    while Length(GSecondaryForms) > 0 do
+    begin
+      GSecondaryForms[High(GSecondaryForms)].Free;
+      SetLength(GSecondaryForms, Length(GSecondaryForms) - 1);
+    end;
+  end;
   if FSpriteDC <> 0 then DeleteDC(FSpriteDC);
   if FSpriteSec <> 0 then DeleteObject(FSpriteSec);
   FSpriteDC := 0;
@@ -784,6 +866,7 @@ const
   SWP_SHOWWINDOW   = LongWord($0040);
   SWP_FRAMECHANGED = LongWord($0020);
   RDW_FLAGS        = LongWord($0185);
+  HWND_TOPMOST     = THandle(-1);
 var
   st: LongInt;
 begin
@@ -791,6 +874,17 @@ begin
   try
     st := LongInt(WS_POPUP or WS_VISIBLE or WS_CLIPCHILDREN);
     Windows.SetWindowLong(Handle, GWL_STYLE, st);
+
+    if FIsSecondary then
+    begin
+      // вторичное окно: держим СОБСТВЕННЫЕ координаты своего монитора,
+      // не максимизируем и не тянем фокус
+      Windows.SetWindowPos(Handle, HWND_TOPMOST, Left, Top, Width, Height,
+        SWP_SHOWWINDOW or SWP_FRAMECHANGED);
+      RedrawWindow(Handle, nil, 0, RDW_FLAGS);
+      Exit;
+    end;
+
     if WindowState <> wsMaximized then
       WindowState := wsMaximized;
     SetBounds(0, 0, Screen.Width, Screen.Height);
@@ -1093,8 +1187,10 @@ var
 
     ampmPx := clockPx * AMPM_SIZE_PERCENT div 100;
     datePx := clockPx * DATE_SIZE_PERCENT div 100;
-    if ampmPx < 8 then ampmPx := 8;
-    if datePx < 8 then datePx := 8;
+
+    // Убираем жесткие лимиты, чтобы шрифт мог сжиматься в превью
+    if ampmPx < 1 then ampmPx := 1;
+    if datePx < 1 then datePx := 1;
 
     if use12 then
     begin
@@ -1121,9 +1217,9 @@ var
     end;
 
     gapH := clockPx div 10;
-    if gapH < 4 then gapH := 4;
+    if gapH < 1 then gapH := 1; // Было 4
     gapV := clockPx div 8;
-    if gapV < 4 then gapV := 4;
+    if gapV < 1 then gapV := 1; // Было 4
 
     clockBlockW := clockInkW;
     if use12 then clockBlockW := clockInkW + gapH + ampmW;
@@ -1268,26 +1364,32 @@ begin
   baseC    := ClockColorRGB(Cfg.ClockColor);
 
   clockPx := ClientHeight div DIVIDER;
-  if clockPx < 10 then clockPx := 10;
+  if clockPx < 2 then clockPx := 2; // Убрали жесткий лимит 10
 
-  for attempt := 1 to 2 do
+  // Увеличили количество попыток с 2 до 10 для надежности
+  for attempt := 1 to 10 do
   begin
     Measure;
-    if attempt = 1 then
+
+    // Если всё влезает в экран с небольшим отступом — выходим из цикла
+    if (compW <= ClientWidth - 2) and (compH <= ClientHeight - 2) then
+      Break;
+
+    k := 1.0;
+    if (compW > ClientWidth - 2) and (compW > 0) then
+      k := (ClientWidth - 2) / compW;
+
+    if (compH > ClientHeight - 2) and (compH > 0) then
+      if (ClientHeight - 2) / compH < k then
+        k := (ClientHeight - 2) / compH;
+
+    if k < 1 then
     begin
-      k := 1.0;
-      if (clockBlockW > ClientWidth) and (clockBlockW > 0) then
-        k := ClientWidth / clockBlockW;
-      if (compH > ClientHeight) and (compH > 0) then
-        if ClientHeight / compH < k then k := ClientHeight / compH;
-      if k < 1 then
-      begin
-        clockPx := Round(clockPx * k);
-        if clockPx < 10 then clockPx := 10;
-      end
-      else
-        Break;
-    end;
+      clockPx := Round(clockPx * k);
+      if clockPx < 1 then clockPx := 1;
+    end
+    else
+      Break;
   end;
 
   clockInkX0 := (compW - clockBlockW) div 2;
@@ -1395,7 +1497,7 @@ end;
 
 procedure TForm1.Quit;
 begin
-  if not FPreview then Close;
+  if not FPreview then Application.Terminate;
 end;
 
 procedure TForm1.FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);

@@ -576,6 +576,7 @@ type
   private
     lblTitle, lblVer, lblStatus, lblTarget, lblSettings, lblHint: TLabel;
     bInstall, bRun, bSettings, bUninstall, bClose: TPanel;
+    function Sc(Value: Integer): Integer;
     function MkLabel(const S: string; X, Y, W, H: Integer; Muted: Boolean): TLabel;
     function MkButton(const S: string; X, Y, W, H: Integer; E: TNotifyEvent): TPanel;
     procedure BtnEnter(Sender: TObject);
@@ -590,6 +591,11 @@ type
   public
     procedure Build;
   end;
+
+function TPanelForm.Sc(Value: Integer): Integer;
+begin
+  Result := MulDiv(Value, PixelsPerInch, 96);
+end;
 
 function TPanelForm.MkLabel(const S: string; X, Y, W, H: Integer; Muted: Boolean): TLabel;
 begin
@@ -735,26 +741,26 @@ begin
   Color := COL_BG;
   Font.Name := 'Segoe UI';
   Font.Size := 9;
-  ClientWidth := 560;
-  ClientHeight := 290;
+  ClientWidth := Sc(560);
+  ClientHeight := Sc(290);
 
-  lblTitle := MkLabel('Ridbowt Drift Clock', 16, 12, 320, 26, False);
+  lblTitle := MkLabel('Ridbowt Drift Clock', Sc(16), Sc(12), Sc(320), Sc(26), False);
   lblTitle.Font.Size := 14;
   lblTitle.Font.Style := [fsBold];
-  lblVer := MkLabel('v' + APP_VERSION + ' (' + APP_DATE + ')', 380, 18, 164, 18, True);
+  lblVer := MkLabel('v' + APP_VERSION + ' (' + APP_DATE + ')', Sc(380), Sc(18), Sc(164), Sc(18), True);
   lblVer.Alignment := taRightJustify;
 
-  lblStatus := MkLabel('', 16, 46, 528, 18, False);
-  lblTarget := MkLabel('', 16, 68, 528, 18, True);
-  lblSettings := MkLabel('', 16, 88, 528, 18, True);
+  lblStatus := MkLabel('', Sc(16), Sc(46), Sc(528), Sc(18), False);
+  lblTarget := MkLabel('', Sc(16), Sc(68), Sc(528), Sc(18), True);
+  lblSettings := MkLabel('', Sc(16), Sc(88), Sc(528), Sc(18), True);
 
-  bInstall := MkButton('Install', 16, 120, 126, 36, @DoInstall);
-  bRun := MkButton('Run', 150, 120, 126, 36, @DoRun);
-  bSettings := MkButton('Settings', 284, 120, 126, 36, @DoSettings);
-  bUninstall := MkButton('Uninstall', 418, 120, 126, 36, @DoUninstall);
+  bInstall := MkButton('Install', Sc(16), Sc(120), Sc(126), Sc(36), @DoInstall);
+  bRun := MkButton('Run', Sc(150), Sc(120), Sc(126), Sc(36), @DoRun);
+  bSettings := MkButton('Settings', Sc(284), Sc(120), Sc(126), Sc(36), @DoSettings);
+  bUninstall := MkButton('Uninstall', Sc(418), Sc(120), Sc(126), Sc(36), @DoUninstall);
 
-  lblHint := MkLabel('', 16, 170, 528, 44, True);
-  bClose := MkButton('Close', 418, 232, 126, 32, @CloseClicked);
+  lblHint := MkLabel('', Sc(16), Sc(170), Sc(528), Sc(44), True);
+  bClose := MkButton('Close', Sc(418), Sc(232), Sc(126), Sc(32), @CloseClicked);
 
   RefreshState;
 end;
