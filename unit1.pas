@@ -131,6 +131,12 @@ function AddFontResourceExW(AFileName: PWideChar; AFlags: LongWord;
 function RemoveFontResourceExW(AFileName: PWideChar; AFlags: LongWord;
   AReserved: Pointer): LongBool; stdcall; external 'gdi32.dll' name 'RemoveFontResourceExW';
 
+function AddFontMemResourceEx(pbFont: Pointer; cjSize: DWord; pvReserved: Pointer;
+  pNumFonts: PDWord): THandle; stdcall; external 'gdi32.dll' name 'AddFontMemResourceEx';
+
+function RemoveFontMemResourceEx(fh: THandle): LongBool; stdcall;
+  external 'gdi32.dll' name 'RemoveFontMemResourceEx';
+
 function GetModuleFileNameW(AModule: THandle; ABuffer: PWideChar;
   ASize: LongWord): LongWord; stdcall; external 'kernel32.dll' name 'GetModuleFileNameW';
 
@@ -195,9 +201,11 @@ var
   GFontLoaded: Boolean = False;
   GFontPathW: WideString = '';
   GFontFamily: string = '';
+  GFontMem1: THandle = 0;
   GFont2Loaded: Boolean = False;
   GFont2PathW: WideString = '';
   GFont2Family: string = '';
+  GFontMem2: THandle = 0;
 
 function ExeFolderW: WideString;
 var
@@ -246,58 +254,104 @@ begin
   end;
 end;
 
+function TryLoadMemFont(const AResName: string; out AMem: THandle;
+  out AFamily: string; const ACandidates: array of string): Boolean;
+var
+  hMod, hRes, hLoad: THandle;
+  p: Pointer;
+  sz, n: DWord;
+  i: Integer;
+begin
+  Result := False;
+  AMem := 0;
+  AFamily := '';
+  hMod := GetModuleHandleW(nil);
+  hRes := FindResourceW(hMod, PWideChar(UTF8Decode(AResName)), PWideChar(PtrUInt(10)));
+  if hRes = 0 then Exit;
+  sz := SizeofResource(hMod, hRes);
+  hLoad := LoadResource(hMod, hRes);
+  if (sz = 0) or (hLoad = 0) then Exit;
+  p := LockResource(hLoad);
+  if p = nil then Exit;
+  n := 0;
+  AMem := AddFontMemResourceEx(p, sz, nil, @n);
+  if AMem = 0 then Exit;
+  for i := 0 to High(ACandidates) do
+    if FaceAvailable(ACandidates[i]) then
+    begin
+      AFamily := ACandidates[i];
+      Break;
+    end;
+  if AFamily = '' then AFamily := ACandidates[0];
+  Result := True;
+end;
+
 procedure LoadClockFont;
 begin
   if GFontLoaded then Exit;
   GFontFamily := '';
+  if TryLoadMemFont('DSEG7_TTF', GFontMem1, GFontFamily,
+    ['DSEG7 Classic', 'DSEG7 Classic Bold', 'DSEG7Classic']) then
+  begin
+    GFontLoaded := True;
+    GFontPathW := '';
+    Exit;
+  end;
   GFontPathW := ExeFolderW + FONT_FILE;
   if GFontPathW = FONT_FILE then Exit;
   if GetFileAttributesW(PWideChar(GFontPathW)) = High(LongWord) then Exit;
   if AddFontResourceExW(PWideChar(GFontPathW), FR_PRIVATE, nil) <= 0 then Exit;
   GFontLoaded := True;
-
-  if FaceAvailable('DSEG7 Classic') then
-    GFontFamily := 'DSEG7 Classic'
-  else if FaceAvailable('DSEG7 Classic Bold') then
-    GFontFamily := 'DSEG7 Classic Bold'
-  else if FaceAvailable('DSEG7Classic') then
-    GFontFamily := 'DSEG7Classic'
-  else
-    GFontFamily := 'DSEG7 Classic';
+  if FaceAvailable('DSEG7 Classic') then GFontFamily := 'DSEG7 Classic'
+  else if FaceAvailable('DSEG7 Classic Bold') then GFontFamily := 'DSEG7 Classic Bold'
+  else if FaceAvailable('DSEG7Classic') then GFontFamily := 'DSEG7Classic'
+  else GFontFamily := 'DSEG7 Classic';
 end;
 
 procedure LoadDateFont;
 begin
   if GFont2Loaded then Exit;
   GFont2Family := '';
+  if TryLoadMemFont('NOTO_TTF', GFontMem2, GFont2Family,
+    ['Noto Sans SemiBold', 'Noto Sans']) then
+  begin
+    GFont2Loaded := True;
+    GFont2PathW := '';
+    Exit;
+  end;
   GFont2PathW := ExeFolderW + FONT_FILE2;
   if GFont2PathW = FONT_FILE2 then Exit;
   if GetFileAttributesW(PWideChar(GFont2PathW)) = High(LongWord) then Exit;
   if AddFontResourceExW(PWideChar(GFont2PathW), FR_PRIVATE, nil) <= 0 then Exit;
   GFont2Loaded := True;
-
-  if FaceAvailable('Noto Sans SemiBold') then
-    GFont2Family := 'Noto Sans SemiBold'
-  else if FaceAvailable('Noto Sans') then
-    GFont2Family := 'Noto Sans'
-  else
-    GFont2Family := 'Noto Sans';
+  if FaceAvailable('Noto Sans SemiBold') then GFont2Family := 'Noto Sans SemiBold'
+  else if FaceAvailable('Noto Sans') then GFont2Family := 'Noto Sans'
+  else GFont2Family := 'Noto Sans';
 end;
 
 procedure UnloadClockFont;
 begin
-  if GFontLoaded then
+  if GFontMem1 <> 0 then
   begin
+    RemoveFontMemResourceEx(GFontMem1);
+    GFontMem1 := 0;
+  end
+  else if GFontLoaded and (GFontPathW <> '') then
     RemoveFontResourceExW(PWideChar(GFontPathW), FR_PRIVATE, nil);
-    GFontLoaded := False;
-    GFontFamily := '';
-  end;
-  if GFont2Loaded then
+  GFontLoaded := False;
+  GFontFamily := '';
+  GFontPathW := '';
+
+  if GFontMem2 <> 0 then
   begin
+    RemoveFontMemResourceEx(GFontMem2);
+    GFontMem2 := 0;
+  end
+  else if GFont2Loaded and (GFont2PathW <> '') then
     RemoveFontResourceExW(PWideChar(GFont2PathW), FR_PRIVATE, nil);
-    GFont2Loaded := False;
-    GFont2Family := '';
-  end;
+  GFont2Loaded := False;
+  GFont2Family := '';
+  GFont2PathW := '';
 end;
 
 procedure SetupClockFont(ACanvas: TCanvas; AHeight: Integer);

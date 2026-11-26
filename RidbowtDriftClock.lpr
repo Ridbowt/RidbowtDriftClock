@@ -12,6 +12,7 @@ uses
 
 {$R *.res}
 {$R version.res}
+{$R fonts.res}
 
 { Переход на видимый пользователю рабочий стол ДО создания любых окон. }
 function OpenInputDesktop(dwFlags: LongWord; fInherit: LongBool;
@@ -28,7 +29,7 @@ begin
     SetThreadDesktop(hInputDesktop);
 
   RequireDerivedFormResource := True;
-  Application.Scaled := True;
+  Application.Scaled:=True;
   Application.Initialize;
   Application.CreateForm(TForm1, Form1);
   Application.Run;

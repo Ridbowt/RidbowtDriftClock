@@ -10,15 +10,12 @@ uses
 
 const
   APP_NAME    = 'RidbowtDriftClock';
-  APP_VERSION = '1.0.0';
-  APP_DATE    = '2026-11-24';
+  APP_VERSION = '1.1.0';
+  APP_DATE    = '2026-11-26';
   APP_URL     = 'https://github.com/Ridbowt/RidbowtDriftClock';
-
-  { веб-ссылки на лицензии; пока заглушки, заработают после загрузки файлов в репозиторий }
   APP_LICENSE_DSEG = 'https://github.com/Ridbowt/RidbowtDriftClock/blob/main/LICENSES/DSEG7/OFL.txt';
   APP_LICENSE_NOTO = 'https://github.com/Ridbowt/RidbowtDriftClock/blob/main/LICENSES/NotoSans/OFL.txt';
 
-  { имя файла настроек оставлено прежним для совместимости со старыми конфигами }
   INI_NAME = 'ClockSaver.ini';
   CLOCK_COLOR_COUNT = 8;
   CLOCK_COLOR_TRAFFIC = 7;
@@ -47,13 +44,12 @@ type
     ClockColor: Integer;
     WinWidth: Integer;
     WinHeight: Integer;
-    FilePath: string;
+    FilePath: string;          // единый путь к INI на весь запуск
     LastError: string;
     constructor Create;
     procedure Load;
     function Save: Boolean;
     function FileChanged: Boolean;
-    function InWindowsFolder: Boolean;
   end;
 
 var
@@ -75,7 +71,7 @@ const
   COL_AMBER_HI = TColor($0033B7FF);
 
   DEF_CLIENT_W = 960;
-  DEF_CLIENT_H = 520;
+  DEF_CLIENT_H = 540;
   MIN_CLIENT_W = 900;
   MIN_CLIENT_H = 500;
 
@@ -84,15 +80,324 @@ const
 function ShellExecuteA(hWnd: THandle; lpOperation, lpFile, lpParameters,
   lpDirectory: PChar; nShowCmd: LongInt): THandle; stdcall;
   external 'shell32.dll' name 'ShellExecuteA';
-
 function CreateMutexW(lpMutexAttributes: Pointer; bInitialOwner: LongBool;
   lpName: PWideChar): THandle; stdcall; external 'kernel32.dll' name 'CreateMutexW';
-
 function ReleaseMutex(hMutex: THandle): LongBool; stdcall;
   external 'kernel32.dll' name 'ReleaseMutex';
-
 function FindWindowW(lpClassName, lpWindowName: PWideChar): THandle; stdcall;
   external 'user32.dll' name 'FindWindowW';
+
+{ ================= определение режима хранения ================= }
+
+function GetLongPathNameW(lpszShortPath: PWideChar; lpszLongPath: PWideChar;
+  cchBuffer: DWord): DWord; stdcall; external 'kernel32.dll' name 'GetLongPathNameW';
+
+function LongPath(const APath: string): string;
+var
+  w, outw: WideString;
+  buf: array[0..4095] of WideChar;
+  n: DWord;
+begin
+  Result := APath;
+  if APath = '' then Exit;
+  w := UTF8Decode(APath);
+  FillChar(buf, SizeOf(buf), 0);
+  n := GetLongPathNameW(PWideChar(w), @buf[0], 4096);
+  if (n > 0) and (n < 4096) then
+  begin
+    outw := PWideChar(@buf[0]);
+    Result := UTF8Encode(outw);
+  end;
+end;
+
+function NormDir(const ADir: string): string;
+begin
+  Result := LowerCase(LongPath(Trim(ADir)));
+  while (Result <> '') and (Result[Length(Result)] = '\') do
+    Delete(Result, Length(Result), 1);
+end;
+
+function IsSystemLocation(const AExeDir: string): Boolean;
+var
+  buf: array[0..4095] of WideChar;
+  n: DWord;
+  winDir, sysDir, d: string;
+  w: WideString;
+begin
+  Result := False;
+  d := NormDir(AExeDir);
+  if d = '' then Exit;
+
+  FillChar(buf, SizeOf(buf), 0);
+  n := GetSystemDirectoryW(@buf[0], 4096);
+  if (n > 0) and (n < 4096) then
+  begin
+    w := PWideChar(@buf[0]);
+    sysDir := UTF8Encode(w);
+    if NormDir(sysDir) = d then Exit(True);
+  end;
+
+  FillChar(buf, SizeOf(buf), 0);
+  n := GetWindowsDirectoryW(@buf[0], 4096);
+  if (n > 0) and (n < 4096) then
+  begin
+    w := PWideChar(@buf[0]);
+    winDir := UTF8Encode(w);
+    if NormDir(winDir + '\System32') = d then Exit(True);
+    if NormDir(winDir + '\SysWOW64') = d then Exit(True);
+  end;
+end;
+
+function ResolveSettingsPath: string;
+var
+  exeDir, appData: string;
+begin
+  exeDir := ExtractFilePath(ParamStr(0));
+  if IsSystemLocation(exeDir) then
+  begin
+    appData := SysUtils.GetEnvironmentVariable('APPDATA');
+    if appData <> '' then
+      Exit(IncludeTrailingPathDelimiter(appData) + 'RidbowtDriftClock\' + INI_NAME);
+  end;
+  Result := exeDir + INI_NAME;
+end;
+
+function DisplaySettingsPath: string;
+var
+  appData, prefix: string;
+begin
+  Result := Cfg.FilePath;
+  appData := SysUtils.GetEnvironmentVariable('APPDATA');
+  if appData = '' then Exit;
+  prefix := IncludeTrailingPathDelimiter(appData) + 'RidbowtDriftClock\';
+  if LowerCase(Copy(Result, 1, Length(prefix))) = LowerCase(prefix) then
+    Result := '%APPDATA%\RidbowtDriftClock\' +
+      Copy(Result, Length(prefix) + 1, MaxInt);
+end;
+
+{ ================= палитра ================= }
+
+function ClockColorName(AIndex: Integer): string;
+begin
+  case AIndex of
+    1: Result := 'Yellow';
+    2: Result := 'Cyan';
+    3: Result := 'Purple';
+    4: Result := 'Red';
+    5: Result := 'Green';
+    6: Result := 'White';
+    7: Result := 'Traffic Light (Bonus)';
+  else
+    Result := 'Amber';
+  end;
+end;
+
+function ClockColorRGB(AIndex: Integer): TColor;
+begin
+  case AIndex of
+    1: Result := RGBToColor($FF, $FF, $00);
+    2: Result := RGBToColor($00, $CF, $FF);
+    3: Result := RGBToColor($A8, $55, $F7);
+    4: Result := RGBToColor($FF, $30, $4F);
+    5: Result := RGBToColor($39, $E8, $75);
+    6: Result := RGBToColor($F5, $F5, $F5);
+    7: Result := RGBToColor($FF, $FF, $00);
+  else
+    Result := RGBToColor($FF, $9D, $00);
+  end;
+end;
+
+function ClockColorIndexByName(const AName: string): Integer;
+var
+  s: string;
+begin
+  s := LowerCase(Trim(AName));
+  if s = 'yellow' then Result := 1
+  else if s = 'cyan' then Result := 2
+  else if s = 'purple' then Result := 3
+  else if s = 'red' then Result := 4
+  else if s = 'green' then Result := 5
+  else if s = 'white' then Result := 6
+  else if (s = 'traffic light (bonus)') or (s = 'traffic light') or (s = 'traffic') then
+    Result := CLOCK_COLOR_TRAFFIC
+  else Result := 0;
+end;
+
+function TrafficLightColor(APart: Integer): TColor;
+begin
+  case APart of
+    0: Result := RGBToColor($FF, $30, $30);
+    2: Result := RGBToColor($39, $E8, $75);
+  else
+    Result := RGBToColor($FF, $FF, $00);
+  end;
+end;
+
+function DateFormatName(AIndex: Integer): string;
+begin
+  case AIndex of
+    1: Result := 'ISO';
+    2: Result := 'European';
+    3: Result := 'American';
+    4: Result := 'Short';
+  else
+    Result := 'None';
+  end;
+end;
+
+function DateFormatIndexByName(const AName: string): Integer;
+var
+  s: string;
+begin
+  s := LowerCase(Trim(AName));
+  if s = 'iso' then Result := 1
+  else if s = 'european' then Result := 2
+  else if s = 'american' then Result := 3
+  else if s = 'short' then Result := 4
+  else Result := 0;
+end;
+
+{ ================= хранилище ================= }
+
+constructor TSettings.Create;
+begin
+  inherited Create;
+  FilePath := ResolveSettingsPath;
+  ShowSeconds := True;
+  BlinkColons := True;
+  ShowFps := False;
+  Use12Hour := False;
+  DateFormat := 4;
+  UseRussian := False;
+  CenterLocked := False;
+  FastMovement := False;
+  UseAtmosphericBackground := False;
+  DimBrightness := True;
+  ClockColor := CLOCK_COLOR_TRAFFIC;
+  WinWidth := DEF_CLIENT_W;
+  WinHeight := DEF_CLIENT_H;
+  LastError := '';
+  FStamp := 0;
+end;
+
+procedure TSettings.Load;
+var
+  ini: TMemIniFile;
+  sFmt: string;
+  oldInt: Integer;
+begin
+  FilePath := ResolveSettingsPath;   // режим заново на каждый запуск/чтение
+  ShowSeconds := True;
+  BlinkColons := True;
+  ShowFps := False;
+  Use12Hour := False;
+  DateFormat := 4;
+  UseRussian := False;
+  CenterLocked := False;
+  FastMovement := False;
+  UseAtmosphericBackground := False;
+  DimBrightness := True;
+  ClockColor := CLOCK_COLOR_TRAFFIC;
+  WinWidth := DEF_CLIENT_W;
+  WinHeight := DEF_CLIENT_H;
+  FStamp := 0;
+
+  // автосоздание папки и файла с дефолтами, если их нет
+  if not FileExists(FilePath) then
+  begin
+    ForceDirectories(ExtractFileDir(FilePath));
+    Save;
+  end;
+
+  if FileExists(FilePath) then
+  try
+    ini := TMemIniFile.Create(FilePath);
+    try
+      ShowSeconds := ini.ReadBool('Clock', 'ShowSeconds', True);
+      BlinkColons := ini.ReadBool('Clock', 'BlinkColons', True);
+      ShowFps := ini.ReadBool('Clock', 'ShowFps', False);
+      Use12Hour := ini.ReadBool('Clock', 'Time12Hour', False);
+      sFmt := Trim(ini.ReadString('Clock', 'DateFormat', ''));
+      if sFmt = '' then
+        DateFormat := 4
+      else if TryStrToInt(sFmt, oldInt) then
+      begin
+        DateFormat := oldInt + 1;
+        if (DateFormat < 1) or (DateFormat >= DATE_FORMAT_COUNT) then
+          DateFormat := 1;
+      end
+      else
+        DateFormat := DateFormatIndexByName(sFmt);
+      UseRussian := ini.ReadBool('Clock', 'UseRussian', False);
+      CenterLocked := ini.ReadBool('Clock', 'CenterLocked', False);
+      FastMovement := ini.ReadBool('Clock', 'FastMovement', False);
+      UseAtmosphericBackground := ini.ReadBool('Clock', 'UseAtmosphericBackground', False);
+      DimBrightness := ini.ReadBool('Clock', 'DimBrightness', True);
+      ClockColor := ClockColorIndexByName(ini.ReadString('Clock', 'ClockColor', 'Traffic Light (Bonus)'));
+      WinWidth := ini.ReadInteger('Window', 'Width', DEF_CLIENT_W);
+      WinHeight := ini.ReadInteger('Window', 'Height', DEF_CLIENT_H);
+    finally
+      ini.Free;
+    end;
+  except
+    on E: Exception do LastError := E.Message;
+  end;
+
+  if (DateFormat < 0) or (DateFormat >= DATE_FORMAT_COUNT) then DateFormat := 0;
+  if (WinWidth < MIN_CLIENT_W) or (WinWidth > 10000) then WinWidth := DEF_CLIENT_W;
+  if (WinHeight < MIN_CLIENT_H) or (WinHeight > 10000) then WinHeight := DEF_CLIENT_H;
+
+  FileAge(FilePath, FStamp);
+end;
+
+function TSettings.Save: Boolean;
+var
+  ini: TMemIniFile;
+begin
+  Result := False;
+  LastError := '';
+  try
+    ForceDirectories(ExtractFileDir(FilePath));
+    ini := TMemIniFile.Create(FilePath);
+    try
+      ini.WriteBool('Clock', 'ShowSeconds', ShowSeconds);
+      ini.WriteBool('Clock', 'BlinkColons', BlinkColons);
+      ini.WriteBool('Clock', 'ShowFps', ShowFps);
+      ini.WriteBool('Clock', 'Time12Hour', Use12Hour);
+      ini.WriteString('Clock', 'DateFormat', DateFormatName(DateFormat));
+      ini.WriteBool('Clock', 'UseRussian', UseRussian);
+      ini.WriteBool('Clock', 'CenterLocked', CenterLocked);
+      ini.WriteBool('Clock', 'FastMovement', FastMovement);
+      ini.WriteBool('Clock', 'UseAtmosphericBackground', UseAtmosphericBackground);
+      ini.WriteBool('Clock', 'DimBrightness', DimBrightness);
+      ini.WriteString('Clock', 'ClockColor', ClockColorName(ClockColor));
+      ini.WriteInteger('Window', 'Width', WinWidth);
+      ini.WriteInteger('Window', 'Height', WinHeight);
+      ini.UpdateFile;
+    finally
+      ini.Free;
+    end;
+    FileAge(FilePath, FStamp);
+    Result := True;
+  except
+    on E: Exception do LastError := E.Message;
+  end;
+end;
+
+function TSettings.FileChanged: Boolean;
+var
+  dt: TDateTime;
+begin
+  Result := False;
+  if not FileAge(FilePath, dt) then Exit;
+  if dt <> FStamp then
+  begin
+    FStamp := dt;
+    Result := True;
+  end;
+end;
+
+{ ================= графитовые контролы ================= }
 
 type
   TPickEvent = procedure(AIndex: Integer) of object;
@@ -272,226 +577,6 @@ type
     procedure Build;
   end;
 
-{ ================= palette ================= }
-
-function ClockColorName(AIndex: Integer): string;
-begin
-  case AIndex of
-    1: Result := 'Yellow';
-    2: Result := 'Cyan';
-    3: Result := 'Purple';
-    4: Result := 'Red';
-    5: Result := 'Green';
-    6: Result := 'White';
-    7: Result := 'Traffic Light (Bonus)';
-  else
-    Result := 'Amber';
-  end;
-end;
-
-function ClockColorRGB(AIndex: Integer): TColor;
-begin
-  case AIndex of
-    1: Result := RGBToColor($FF, $FF, $00);
-    2: Result := RGBToColor($00, $CF, $FF);
-    3: Result := RGBToColor($A8, $55, $F7);
-    4: Result := RGBToColor($FF, $30, $4F);
-    5: Result := RGBToColor($39, $E8, $75);
-    6: Result := RGBToColor($F5, $F5, $F5);
-    7: Result := RGBToColor($FF, $FF, $00);
-  else
-    Result := RGBToColor($FF, $9D, $00);
-  end;
-end;
-
-function ClockColorIndexByName(const AName: string): Integer;
-var
-  s: string;
-begin
-  s := LowerCase(Trim(AName));
-  if s = 'yellow' then Result := 1
-  else if s = 'cyan' then Result := 2
-  else if s = 'purple' then Result := 3
-  else if s = 'red' then Result := 4
-  else if s = 'green' then Result := 5
-  else if s = 'white' then Result := 6
-  else if (s = 'traffic light (bonus)') or (s = 'traffic light') or (s = 'traffic') then
-    Result := CLOCK_COLOR_TRAFFIC
-  else Result := 0;
-end;
-
-function TrafficLightColor(APart: Integer): TColor;
-begin
-  case APart of
-    0: Result := RGBToColor($FF, $30, $30);
-    2: Result := RGBToColor($39, $E8, $75);
-  else
-    Result := RGBToColor($FF, $FF, $00);
-  end;
-end;
-
-function DateFormatName(AIndex: Integer): string;
-begin
-  case AIndex of
-    1: Result := 'ISO';
-    2: Result := 'European';
-    3: Result := 'American';
-    4: Result := 'Short';
-  else
-    Result := 'None';
-  end;
-end;
-
-function DateFormatIndexByName(const AName: string): Integer;
-var
-  s: string;
-begin
-  s := LowerCase(Trim(AName));
-  if s = 'iso' then Result := 1
-  else if s = 'european' then Result := 2
-  else if s = 'american' then Result := 3
-  else if s = 'short' then Result := 4
-  else Result := 0;
-end;
-
-{ ================= storage ================= }
-
-constructor TSettings.Create;
-begin
-  inherited Create;
-  FilePath := ExtractFilePath(ParamStr(0)) + INI_NAME;
-  ShowSeconds := True;
-  BlinkColons := True;
-  ShowFps := False;
-  Use12Hour := False;
-  DateFormat := 4;
-  UseRussian := False;
-  CenterLocked := False;
-  FastMovement := False;
-  UseAtmosphericBackground := False;
-  DimBrightness := True;
-  ClockColor := CLOCK_COLOR_TRAFFIC;
-  WinWidth := DEF_CLIENT_W;
-  WinHeight := DEF_CLIENT_H;
-  LastError := '';
-  FStamp := 0;
-end;
-
-procedure TSettings.Load;
-var
-  ini: TMemIniFile;
-  sFmt: string;
-  oldInt: Integer;
-begin
-  ShowSeconds := True;
-  BlinkColons := True;
-  ShowFps := False;
-  Use12Hour := False;
-  DateFormat := 4;
-  UseRussian := False;
-  CenterLocked := False;
-  FastMovement := False;
-  UseAtmosphericBackground := False;
-  DimBrightness := True;
-  ClockColor := CLOCK_COLOR_TRAFFIC;
-  WinWidth := DEF_CLIENT_W;
-  WinHeight := DEF_CLIENT_H;
-  FStamp := 0;
-  if FileExists(FilePath) then
-  try
-    ini := TMemIniFile.Create(FilePath);
-    try
-      ShowSeconds := ini.ReadBool('Clock', 'ShowSeconds', True);
-      BlinkColons := ini.ReadBool('Clock', 'BlinkColons', True);
-      ShowFps := ini.ReadBool('Clock', 'ShowFps', False);
-      Use12Hour := ini.ReadBool('Clock', 'Time12Hour', False);
-      sFmt := Trim(ini.ReadString('Clock', 'DateFormat', ''));
-      if sFmt = '' then
-        DateFormat := 4
-      else if TryStrToInt(sFmt, oldInt) then
-      begin
-        DateFormat := oldInt + 1;
-        if (DateFormat < 1) or (DateFormat >= DATE_FORMAT_COUNT) then
-          DateFormat := 1;
-      end
-      else
-        DateFormat := DateFormatIndexByName(sFmt);
-      UseRussian := ini.ReadBool('Clock', 'UseRussian', False);
-      CenterLocked := ini.ReadBool('Clock', 'CenterLocked', False);
-      FastMovement := ini.ReadBool('Clock', 'FastMovement', False);
-      UseAtmosphericBackground := ini.ReadBool('Clock', 'UseAtmosphericBackground', False);
-      DimBrightness := ini.ReadBool('Clock', 'DimBrightness', True);
-      ClockColor := ClockColorIndexByName(ini.ReadString('Clock', 'ClockColor', 'Traffic Light (Bonus)'));
-      WinWidth := ini.ReadInteger('Window', 'Width', DEF_CLIENT_W);
-      WinHeight := ini.ReadInteger('Window', 'Height', DEF_CLIENT_H);
-    finally
-      ini.Free;
-    end;
-  except
-    on E: Exception do LastError := E.Message;
-  end;
-
-  if (DateFormat < 0) or (DateFormat >= DATE_FORMAT_COUNT) then DateFormat := 0;
-  if (WinWidth < MIN_CLIENT_W) or (WinWidth > 10000) then WinWidth := DEF_CLIENT_W;
-  if (WinHeight < MIN_CLIENT_H) or (WinHeight > 10000) then WinHeight := DEF_CLIENT_H;
-
-  FileAge(FilePath, FStamp);
-end;
-
-function TSettings.Save: Boolean;
-var
-  ini: TMemIniFile;
-begin
-  Result := False;
-  LastError := '';
-  try
-    ini := TMemIniFile.Create(FilePath);
-    try
-      ini.WriteBool('Clock', 'ShowSeconds', ShowSeconds);
-      ini.WriteBool('Clock', 'BlinkColons', BlinkColons);
-      ini.WriteBool('Clock', 'ShowFps', ShowFps);
-      ini.WriteBool('Clock', 'Time12Hour', Use12Hour);
-      ini.WriteString('Clock', 'DateFormat', DateFormatName(DateFormat));
-      ini.WriteBool('Clock', 'UseRussian', UseRussian);
-      ini.WriteBool('Clock', 'CenterLocked', CenterLocked);
-      ini.WriteBool('Clock', 'FastMovement', FastMovement);
-      ini.WriteBool('Clock', 'UseAtmosphericBackground', UseAtmosphericBackground);
-      ini.WriteBool('Clock', 'DimBrightness', DimBrightness);
-      ini.WriteString('Clock', 'ClockColor', ClockColorName(ClockColor));
-      ini.WriteInteger('Window', 'Width', WinWidth);
-      ini.WriteInteger('Window', 'Height', WinHeight);
-      ini.UpdateFile;
-    finally
-      ini.Free;
-    end;
-    FileAge(FilePath, FStamp);
-    Result := True;
-  except
-    on E: Exception do LastError := E.Message;
-  end;
-end;
-
-function TSettings.FileChanged: Boolean;
-var
-  dt: TDateTime;
-begin
-  Result := False;
-  if not FileAge(FilePath, dt) then Exit;
-  if dt <> FStamp then
-  begin
-    FStamp := dt;
-    Result := True;
-  end;
-end;
-
-function TSettings.InWindowsFolder: Boolean;
-var
-  w: string;
-begin
-  w := LowerCase(SysUtils.GetEnvironmentVariable('WINDIR'));
-  Result := (w <> '') and (Pos(w, LowerCase(FilePath)) = 1);
-end;
-
 { ================= TGBlock ================= }
 
 constructor TGBlock.Create(AOwner: TComponent);
@@ -508,14 +593,12 @@ begin
   Canvas.Brush.Style := bsSolid;
   Canvas.Brush.Color := COL_BLOCK;
   Canvas.FillRect(ClientRect);
-
   Canvas.Font.Name := 'Segoe UI';
   Canvas.Font.Size := 9;
   Canvas.Font.Style := [fsBold];
   Canvas.Font.Color := COL_MUTED;
   Canvas.Brush.Style := bsClear;
   Canvas.TextOut(16, 13, FTitle);
-
   Canvas.Pen.Color := COL_LINE;
   Canvas.Pen.Width := 1;
   Canvas.MoveTo(16, 34);
@@ -560,9 +643,7 @@ begin
   Canvas.Brush.Style := bsSolid;
   Canvas.Brush.Color := COL_BLOCK;
   Canvas.FillRect(ClientRect);
-
   by := (Height - 18) div 2;
-
   if FChecked then
   begin
     Canvas.Brush.Color := COL_AMBER;
@@ -575,7 +656,6 @@ begin
   end;
   Canvas.Pen.Width := 1;
   Canvas.RoundRect(0, by, 18, by + 18, 5, 5);
-
   if FChecked then
   begin
     Canvas.Pen.Color := COL_BG;
@@ -583,7 +663,6 @@ begin
     Canvas.Polyline([Point(4, by + 9), Point(7, by + 12), Point(13, by + 5)]);
     Canvas.Pen.Width := 1;
   end;
-
   Canvas.Font.Name := 'Segoe UI';
   Canvas.Font.Size := 9;
   Canvas.Font.Style := [];
@@ -591,7 +670,6 @@ begin
   Canvas.Brush.Style := bsClear;
   ty := (Height - Canvas.TextHeight('Ag')) div 2;
   Canvas.TextOut(28, ty, FCaption);
-
   if Focused then
     Canvas.DrawFocusRect(Rect(26, 1, Width - 1, Height - 1));
 end;
@@ -674,19 +752,15 @@ begin
   Canvas.Brush.Style := bsSolid;
   Canvas.Brush.Color := COL_BLOCK;
   Canvas.FillRect(ClientRect);
-
   Canvas.Pen.Color := COL_LINE;
   Canvas.Pen.Width := 1;
   Canvas.Brush.Style := bsClear;
   Canvas.Rectangle(0, 0, Width, Height);
-
   if FItems = nil then Exit;
-
   Canvas.Font.Name := 'Segoe UI';
   Canvas.Font.Size := 9;
   Canvas.Font.Style := [];
   Canvas.Brush.Style := bsClear;
-
   for i := 0 to FItems.Count - 1 do
   begin
     y := 4 + i * ROW_H;
@@ -853,7 +927,6 @@ begin
     Exit;
   end;
   if FItems.Count = 0 then Exit;
-
   h := 8 + FItems.Count * ROW_H;
   FPopup := TForm.CreateNew(nil);
   FPopup.BorderStyle := bsNone;
@@ -861,7 +934,6 @@ begin
   FPopup.ShowInTaskBar := stNever;
   FPopup.Color := COL_BLOCK;
   FPopup.OnDeactivate := @PopupDeactivate;
-
   lst := TGList.Create(FPopup);
   lst.Parent := FPopup;
   lst.Align := alClient;
@@ -869,7 +941,6 @@ begin
   lst.Selected := FIndex;
   lst.OnPick := @Pick;
   lst.OnCancel := @PopupCancel;
-
   p := ClientToScreen(Point(0, Height + 2));
   px := p.X;
   py := p.Y;
@@ -892,12 +963,10 @@ begin
   Canvas.Brush.Style := bsSolid;
   Canvas.Brush.Color := COL_BLOCK;
   Canvas.FillRect(ClientRect);
-
   Canvas.Brush.Color := COL_FIELD;
   if FHover or Focused then Canvas.Pen.Color := COL_AMBER else Canvas.Pen.Color := COL_LINE;
   Canvas.Pen.Width := 1;
   Canvas.RoundRect(0, 0, Width, Height, 6, 6);
-
   Canvas.Font.Name := 'Segoe UI';
   Canvas.Font.Size := 9;
   Canvas.Font.Style := [];
@@ -907,7 +976,6 @@ begin
   if (FIndex >= 0) and (FIndex < FItems.Count) then txt := FItems[FIndex];
   ty := (Height - Canvas.TextHeight('Ag')) div 2;
   Canvas.TextOut(12, ty, txt);
-
   ax := Width - 20;
   Canvas.Pen.Color := COL_MUTED;
   Canvas.Pen.Width := 2;
@@ -986,11 +1054,9 @@ begin
   Canvas.Brush.Style := bsSolid;
   Canvas.Brush.Color := COL_BG;
   Canvas.FillRect(ClientRect);
-
   if FHover then Canvas.Brush.Color := COL_AMBER_HI else Canvas.Brush.Color := COL_AMBER;
   Canvas.Pen.Color := Canvas.Brush.Color;
   Canvas.RoundRect(0, 0, Width, Height, 7, 7);
-
   Canvas.Font.Name := 'Segoe UI';
   Canvas.Font.Size := 9;
   Canvas.Font.Style := [fsBold];
@@ -999,7 +1065,6 @@ begin
   tw := Canvas.TextWidth(FCaption);
   th := Canvas.TextHeight('Ag');
   Canvas.TextOut((Width - tw) div 2, (Height - th) div 2, FCaption);
-
   if Focused then
     Canvas.DrawFocusRect(Rect(2, 2, Width - 2, Height - 2));
 end;
@@ -1068,7 +1133,6 @@ begin
   Canvas.Brush.Style := bsSolid;
   Canvas.Brush.Color := COL_BLOCK;
   Canvas.FillRect(ClientRect);
-
   if FIndex = CLOCK_COLOR_TRAFFIC then
   begin
     w3 := (Width - 2) div 3;
@@ -1084,14 +1148,13 @@ begin
     Canvas.Brush.Color := ClockColorRGB(FIndex);
     Canvas.FillRect(Rect(1, 1, Width - 1, Height - 1));
   end;
-
   Canvas.Brush.Style := bsClear;
   Canvas.Pen.Color := COL_LINE;
   Canvas.Pen.Width := 1;
   Canvas.RoundRect(0, 0, Width, Height, 6, 6);
 end;
 
-{ ================= form ================= }
+{ ================= форма ================= }
 
 function TGSettingsForm.MakeLabel(AParent: TWinControl; const AText: string; AMuted: Boolean): TLabel;
 begin
@@ -1299,8 +1362,10 @@ begin
     chkFps.OnChange := @Changed;
     lblDiagHint := MakeLabel(blkDiag, 'Frame counter in the top-left corner of the screensaver.', True);
 
-    lblFooter := MakeLabel(Self, 'All changes are saved instantly to ' + INI_NAME, True);
-    lblFooter.WordWrap := False;
+        lblFooter := MakeLabel(Self, 'All changes are saved instantly to ' + DisplaySettingsPath, True);
+    lblFooter.WordWrap := True;
+    lblFooter.ShowHint := True;
+    lblFooter.Hint := Cfg.FilePath;
 
     btnClose := TGButton.Create(Self);
     btnClose.Parent := Self;
@@ -1381,7 +1446,7 @@ begin
   chkFps.SetBounds(16, 46, bw, 26);
   lblDiagHint.SetBounds(16, 82, bw, 50);
 
-  lblFooter.SetBounds(m, ClientHeight - 34, ClientWidth - 2 * m - 150, 18);
+  lblFooter.SetBounds(m, ClientHeight - 46, ClientWidth - 2 * m - 150, 32);
   btnClose.SetBounds(ClientWidth - m - 120, ClientHeight - 46, 120, 32);
 end;
 
@@ -1470,9 +1535,7 @@ begin
     PChar('Could not save settings.' + LineEnding + LineEnding +
       'File: ' + Cfg.FilePath + LineEnding +
       'Reason: ' + Cfg.LastError + LineEnding + LineEnding +
-      'Settings were NOT saved and have been reverted.' + LineEnding +
-      'Usually this means the folder is write-protected. Move the program ' +
-      'to your own folder (e.g. C:\Tools\' + APP_NAME + ') or run as administrator.'),
+      'Settings were NOT saved and have been reverted.'),
     PChar(APP_NAME + ' — save error'), MB_OK or MB_ICONERROR);
 
   FUpdating := True;
@@ -1518,7 +1581,6 @@ begin
 
   if (hMutex <> 0) and (GetLastError = ERROR_ALREADY_EXISTS) then
   begin
-    // окно настроек уже открыто в другом процессе — активируем его
     capW := UTF8Decode(APP_NAME + ' — Settings');
     hwndExisting := 0;
     for i := 0 to 20 do
@@ -1539,13 +1601,6 @@ begin
   end;
 
   Cfg.Load;
-
-  if Cfg.InWindowsFolder then
-    Application.MessageBox(
-      PChar('The program is running from a Windows system folder.' + LineEnding +
-        'Settings will not be saved here (or will silently go to VirtualStore).' + LineEnding +
-        'Keep the .scr and .ini in a separate folder so everything stays portable.'),
-      PChar(APP_NAME), MB_OK or MB_ICONWARNING);
 
   F := TGSettingsForm.CreateNew(nil);
   try
