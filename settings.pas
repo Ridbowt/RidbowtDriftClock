@@ -10,8 +10,8 @@ uses
 
 const
   APP_NAME    = 'RidbowtDriftClock';
-  APP_VERSION = '1.3.0';
-  APP_DATE    = '2026-11-26';
+  APP_VERSION = '1.4.0';
+  APP_DATE    = '2026-11-28';
   APP_URL     = 'https://github.com/Ridbowt/RidbowtDriftClock';
   APP_LICENSE_DSEG = 'https://github.com/Ridbowt/RidbowtDriftClock/blob/main/LICENSES/DSEG7/OFL.txt';
   APP_LICENSE_NOTO = 'https://github.com/Ridbowt/RidbowtDriftClock/blob/main/LICENSES/NotoSans/OFL.txt';
@@ -462,6 +462,7 @@ type
     procedure Pick(AIndex: Integer);
     procedure PopupDeactivate(Sender: TObject);
     procedure PopupCancel(Sender: TObject);
+	procedure MouseMove(Shift: TShiftState; X, Y: Integer); override;
   protected
     procedure Paint; override;
     procedure MouseDown(Button: TMouseButton; Shift: TShiftState; X, Y: Integer); override;
@@ -916,6 +917,8 @@ begin
     FPopup.Release;
     FPopup := nil;
   end;
+  FHover := False;
+  Invalidate;
 end;
 
 procedure TGCombo.PopupDeactivate(Sender: TObject);
@@ -951,6 +954,8 @@ begin
     ClosePopup;
     Exit;
   end;
+  FHover := False;
+  Invalidate;
   if FItems.Count = 0 then Exit;
   rh := MulDiv(ROW_H, GetParentForm(Self).PixelsPerInch, 96);
   tp := MulDiv(4, GetParentForm(Self).PixelsPerInch, 96);
@@ -991,7 +996,7 @@ begin
   Canvas.Brush.Color := COL_BLOCK;
   Canvas.FillRect(ClientRect);
   Canvas.Brush.Color := COL_FIELD;
-  if FHover or Focused then Canvas.Pen.Color := COL_AMBER else Canvas.Pen.Color := COL_LINE;
+  if FHover then Canvas.Pen.Color := COL_AMBER else Canvas.Pen.Color := COL_LINE;
   Canvas.Pen.Width := 1;
   Canvas.RoundRect(0, 0, Width, Height, 6, 6);
   Canvas.Font.Name := 'Segoe UI';
@@ -1034,6 +1039,16 @@ begin
   inherited MouseLeave;
   FHover := False;
   Invalidate;
+end;
+
+procedure TGCombo.MouseMove(Shift: TShiftState; X, Y: Integer);
+begin
+  inherited MouseMove(Shift, X, Y);
+  if not FHover then
+  begin
+    FHover := True;
+    Invalidate;
+  end;
 end;
 
 procedure TGCombo.KeyDown(var Key: Word; Shift: TShiftState);

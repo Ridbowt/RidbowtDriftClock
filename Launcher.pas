@@ -6,7 +6,7 @@ interface
 
 uses
   Classes, SysUtils, Forms, Controls, StdCtrls, ExtCtrls, Graphics, Windows,
-  Registry, Settings;
+  Registry, Settings, Types;
 
 procedure ShowControlPanel;
 procedure RunInstallWorker;
@@ -23,6 +23,17 @@ const
   COL_FIELD_HI = TColor($004B433E);
   COL_TEXT     = TColor($00E5E5E5);
   COL_MUTED    = TColor($00A6A09A);
+
+  COL_BTN_INSTALL   = TColor($00455B24);  // #245B45
+  COL_BTN_RUN       = TColor($007A5228);  // #28527A
+  COL_BTN_SETTINGS  = TColor($00774451);  // #514477
+  COL_BTN_UNINSTALL = TColor($00403B74);  // #743B40
+  COL_BTN_CLOSE     = TColor($00009DFF);  // #FF9D00
+  COL_BTN_DIS_BG    = TColor($003A3430);  // #30343A
+  COL_BTN_DIS_TEXT  = TColor($00948B85);  // #858B94
+
+  HOVER_AMOUNT = 0.12;
+  PRESS_AMOUNT = 0.18;
   COL_AMBER    = TColor($00009DFF);
 
   PROCESS_QUERY_LIMITED_INFORMATION = $1000;
@@ -88,6 +99,12 @@ function Process32FirstW(hSnapshot: THandle; var lppe: TProcEntry32W): LongBool;
   stdcall; external 'kernel32.dll' name 'Process32FirstW';
 function Process32NextW(hSnapshot: THandle; var lppe: TProcEntry32W): LongBool;
   stdcall; external 'kernel32.dll' name 'Process32NextW';
+
+function MoveFileExW(lpExisting, lpNew: PWideChar; dwFlags: DWord): LongBool;
+  stdcall; external 'kernel32.dll' name 'MoveFileExW';
+
+const
+  MOVEFILE_REPLACE_EXISTING = $00000001;
 
 const
   TOKEN_ADJUST_PRIVS = $0020;
@@ -429,26 +446,66 @@ end;
 
 procedure RunInstallWorker;
 var
-  src, dst, ini: string;
+  src, dst, ini, tmpFile: string;
+  existed, ok: Boolean;
+  attempt: Integer;
 begin
   src := ParamStr(0);
   dst := TargetPath;
+  existed := FileExists(dst);
+
   StopOurProcesses(dst);
-  if not CopyFileW(PWideChar(UTF8Decode(src)), PWideChar(UTF8Decode(dst)), False) then
+
+  // A: копируем во временный файл рядом и заменяем атомарно,
+  // чтобы сбой копирования не оставил битый .scr в System32
+  tmpFile := dst + '.new';
+  DeleteFileW(PWideChar(UTF8Decode(tmpFile)));
+  if not CopyFileW(PWideChar(UTF8Decode(src)), PWideChar(UTF8Decode(tmpFile)), False) then
   begin
     InfoMsg('Install failed: could not copy the file.' + LineEnding + dst, True);
     Exit;
   end;
+
+  ok := False;
+  for attempt := 1 to 3 do
+  begin
+    if MoveFileExW(PWideChar(UTF8Decode(tmpFile)), PWideChar(UTF8Decode(dst)),
+      MOVEFILE_REPLACE_EXISTING) then
+    begin
+      ok := True;
+      Break;
+    end;
+    StopOurProcesses(dst);
+    Sleep(400);
+  end;
+
+  if not ok then
+  begin
+    DeleteFileW(PWideChar(UTF8Decode(tmpFile)));
+    InfoMsg('Install failed: could not replace the file.' + LineEnding + dst +
+      LineEnding + 'The existing installation was not modified.', True);
+    Exit;
+  end;
+
   if not FileExists(dst) then
   begin
     InfoMsg('Install failed: verification error.', True);
     Exit;
   end;
-  RegisterScreenSaver(dst);
+
+  // B (согласованная поправка): регистрируем ТОЛЬКО при свежей установке.
+  // При reinstall регистрация, ScreenSaveActive и таймауты не трогаются вообще.
+  if not existed then
+    RegisterScreenSaver(dst);
+
   ini := ExtractFilePath(ParamStr(0)) + 'ClockSaver.ini';
   if NormPath(ExtractFilePath(ParamStr(0))) <> NormPath(ExtractFilePath(dst)) then
     if FileExists(ini) then DeleteFileW(PWideChar(UTF8Decode(ini)));
-  InfoMsg('Installed successfully.' + LineEnding + dst, False);
+
+  if existed then
+    InfoMsg('Reinstalled successfully.' + LineEnding + dst, False)
+  else
+    InfoMsg('Installed successfully.' + LineEnding + dst, False);
 end;
 
 procedure RunUninstallWorker(ADeleteSettings: Boolean);
@@ -572,15 +629,34 @@ end;
 { ---------- панель ---------- }
 
 type
+  TButtonIcon = (biNone, biInstall, biReinstall, biRun, biSettings,
+    biUninstall, biSystem, biClose);
+
+  TIconButton = class(TPanel)
+  private
+    FIcon: TButtonIcon;
+    procedure SetIcon(AValue: TButtonIcon);
+  protected
+    procedure Paint; override;
+  public
+    constructor Create(AOwner: TComponent); override;
+    property Icon: TButtonIcon read FIcon write SetIcon;
+  end;
+
+type
   TPanelForm = class(TForm)
   private
     lblTitle, lblVer, lblStatus, lblTarget, lblSettings, lblHint: TLabel;
-    bInstall, bRun, bSettings, bUninstall, bClose: TPanel;
+    bInstall, bRun, bSettings, bUninstall, bClose, bSysSettings: TIconButton;
     function Sc(Value: Integer): Integer;
     function MkLabel(const S: string; X, Y, W, H: Integer; Muted: Boolean): TLabel;
-    function MkButton(const S: string; X, Y, W, H: Integer; E: TNotifyEvent): TPanel;
+    function MkButton(const S: string; X, Y, W, H: Integer; ABase: TColor;
+      AIcon: TButtonIcon; E: TNotifyEvent): TIconButton;
     procedure BtnEnter(Sender: TObject);
     procedure BtnLeave(Sender: TObject);
+	procedure BtnDown(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+    procedure BtnUp(Sender: TObject; Button: TMouseButton; Shift: TShiftState; X, Y: Integer);
+    function BtnFontFor(ABase: TColor): TColor;
     procedure SetBtn(B: TPanel; AEnabled: Boolean);
     procedure RefreshState;
     procedure DoInstall(Sender: TObject);
@@ -588,6 +664,7 @@ type
     procedure DoSettings(Sender: TObject);
     procedure DoUninstall(Sender: TObject);
     procedure CloseClicked(Sender: TObject);
+	procedure DoSysSettings(Sender: TObject);
   public
     procedure Build;
   end;
@@ -595,6 +672,169 @@ type
 function TPanelForm.Sc(Value: Integer): Integer;
 begin
   Result := MulDiv(Value, PixelsPerInch, 96);
+end;
+
+procedure PaintButtonIcon(C: TCanvas; Kind: TButtonIcon; X, Y, S: Integer; Ink: TColor);
+var
+  pw, k: Integer;
+  a, ex, ey, tx, ty, w1x, w1y, w2x, w2y: Double;
+
+  function P(fx, fy: Double): TPoint;
+  begin
+    Result := Point(X + Round(fx * S / 12), Y + Round(fy * S / 12));
+  end;
+
+  procedure Line(fx1, fy1, fx2, fy2: Double);
+  begin
+    C.MoveTo(P(fx1, fy1));
+    C.LineTo(P(fx2, fy2));
+  end;
+
+  procedure Poly(const fx, fy: array of Double);
+  var
+    i: Integer;
+    arr: array of TPoint;
+  begin
+    SetLength(arr, Length(fx));
+    for i := 0 to High(fx) do
+      arr[i] := P(fx[i], fy[i]);
+    C.Polygon(arr);
+  end;
+
+begin
+  if Kind = biNone then Exit;
+  pw := (S + 11) div 12;
+  if pw < 1 then pw := 1;
+  C.Pen.Color := Ink;
+  C.Pen.Width := pw;
+  C.Pen.EndCap := pecRound;
+  C.Brush.Color := Ink;
+  case Kind of
+    biInstall:
+      begin
+        C.Brush.Style := bsClear;
+        Line(6, 1.2, 6, 6.4);
+        C.Brush.Style := bsSolid;
+        Poly([3.1, 6, 8.9], [5.4, 8.3, 5.4]);
+        C.Brush.Style := bsClear;
+        C.MoveTo(P(2.4, 8.4));
+        C.LineTo(P(2.4, 10.6));
+        C.LineTo(P(9.6, 10.6));
+        C.LineTo(P(9.6, 8.4));
+      end;
+    biReinstall:
+      begin
+        C.Brush.Style := bsClear;
+        C.MoveTo(P(6 + 4.3 * Cos(300 * Pi / 180), 6 + 4.3 * Sin(300 * Pi / 180)));
+        for k := 1 to 24 do
+        begin
+          a := (300 + k * 12.5) * Pi / 180;
+          C.LineTo(P(6 + 4.3 * Cos(a), 6 + 4.3 * Sin(a)));
+        end;
+        a := 240 * Pi / 180;
+        ex := 6 + 4.3 * Cos(a);
+        ey := 6 + 4.3 * Sin(a);
+        tx := -Sin(a);
+        ty := Cos(a);
+        w1x := ex - (tx * Cos(0.44) - ty * Sin(0.44)) * 2.6;
+        w1y := ey - (tx * Sin(0.44) + ty * Cos(0.44)) * 2.6;
+        w2x := ex - (tx * Cos(-0.44) - ty * Sin(-0.44)) * 2.6;
+        w2y := ey - (tx * Sin(-0.44) + ty * Cos(-0.44)) * 2.6;
+        C.Brush.Style := bsSolid;
+        Poly([ex, w1x, w2x], [ey, w1y, w2y]);
+      end;
+    biRun:
+      begin
+        C.Brush.Style := bsSolid;
+        Poly([3.6, 3.6, 10.2], [2.2, 9.8, 6]);
+      end;
+    biSettings:
+      begin
+        C.Brush.Style := bsClear;
+        C.Ellipse(P(2.7, 2.7).X, P(2.7, 2.7).Y, P(9.3, 9.3).X, P(9.3, 9.3).Y);
+        for k := 0 to 7 do
+        begin
+          a := k * Pi / 4;
+          Line(6 + 3.3 * Cos(a), 6 + 3.3 * Sin(a), 6 + 5.1 * Cos(a), 6 + 5.1 * Sin(a));
+        end;
+        C.Brush.Style := bsSolid;
+        C.Ellipse(P(4.8, 4.8).X, P(4.8, 4.8).Y, P(7.2, 7.2).X, P(7.2, 7.2).Y);
+      end;
+    biUninstall:
+      begin
+        C.Brush.Style := bsClear;
+        Line(2.4, 3, 9.6, 3);
+        C.MoveTo(P(4.6, 3));
+        C.LineTo(P(4.6, 1.4));
+        C.LineTo(P(7.4, 1.4));
+        C.LineTo(P(7.4, 3));
+        C.MoveTo(P(3.5, 3.6));
+        C.LineTo(P(4, 10.6));
+        C.LineTo(P(8, 10.6));
+        C.LineTo(P(8.5, 3.6));
+        Line(5.3, 5.2, 5.4, 9);
+        Line(6.7, 5.2, 6.6, 9);
+      end;
+    biSystem:
+      begin
+        C.Brush.Style := bsClear;
+        C.Rectangle(P(1.6, 2).X, P(1.6, 2).Y, P(10.4, 8.4).X, P(10.4, 8.4).Y);
+        Line(6, 8.4, 6, 10.2);
+        Line(3.6, 10.6, 8.4, 10.6);
+      end;
+    biClose:
+      begin
+        C.Brush.Style := bsClear;
+        Line(3.2, 3.2, 8.8, 8.8);
+        Line(8.8, 3.2, 3.2, 8.8);
+      end;
+  end;
+  C.Brush.Style := bsClear;
+end;
+
+constructor TIconButton.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  FIcon := biNone;
+  BevelOuter := bvNone;
+  DoubleBuffered := True;
+  ControlStyle := ControlStyle + [csOpaque];
+end;
+
+procedure TIconButton.SetIcon(AValue: TButtonIcon);
+begin
+  if FIcon = AValue then Exit;
+  FIcon := AValue;
+  Invalidate;
+end;
+
+procedure TIconButton.Paint;
+var
+  s, gap, tw, total, x0, iy, ty, dpi: Integer;
+begin
+  Canvas.Brush.Style := bsSolid;
+  Canvas.Brush.Color := Color;
+  Canvas.FillRect(ClientRect);
+  Canvas.Font.Assign(Font);
+  Canvas.Brush.Style := bsClear;
+  tw := Canvas.TextWidth(Caption);
+  ty := (Height - Canvas.TextHeight('Ag')) div 2;
+  if FIcon = biNone then
+  begin
+    Canvas.TextOut((Width - tw) div 2, ty, Caption);
+    Exit;
+  end;
+  dpi := GetDeviceCaps(Canvas.Handle, 88);  // 88 = LOGPIXELSX
+  if dpi <= 0 then dpi := 96;
+  s := MulDiv(12, dpi, 96);
+  gap := MulDiv(8, dpi, 96);
+  total := s + gap + tw;
+  x0 := (Width - total) div 2;
+  if x0 < MulDiv(6, dpi, 96) then x0 := MulDiv(6, dpi, 96);
+  iy := (Height - s) div 2;
+  PaintButtonIcon(Canvas, FIcon, x0, iy, s, Font.Color);
+  Canvas.Brush.Style := bsClear;
+  Canvas.TextOut(x0 + s + gap, ty, Caption);
 end;
 
 function TPanelForm.MkLabel(const S: string; X, Y, W, H: Integer; Muted: Boolean): TLabel;
@@ -610,33 +850,86 @@ begin
   Result.SetBounds(X, Y, W, H);
 end;
 
-function TPanelForm.MkButton(const S: string; X, Y, W, H: Integer; E: TNotifyEvent): TPanel;
+function BrightenColor(C: TColor; AAmount: Double): TColor;
+var
+  r, g, b: Integer;
 begin
-  Result := TPanel.Create(Self);
+  r := C and $FF;
+  g := (C shr 8) and $FF;
+  b := (C shr 16) and $FF;
+  r := Round(r + (255 - r) * AAmount);
+  g := Round(g + (255 - g) * AAmount);
+  b := Round(b + (255 - b) * AAmount);
+  Result := RGBToColor(r, g, b);
+end;
+
+function DarkenColor(C: TColor; AAmount: Double): TColor;
+var
+  r, g, b: Integer;
+begin
+  r := C and $FF;
+  g := (C shr 8) and $FF;
+  b := (C shr 16) and $FF;
+  r := Round(r * (1 - AAmount));
+  g := Round(g * (1 - AAmount));
+  b := Round(b * (1 - AAmount));
+  Result := RGBToColor(r, g, b);
+end;
+
+function TPanelForm.MkButton(const S: string; X, Y, W, H: Integer;
+  ABase: TColor; AIcon: TButtonIcon; E: TNotifyEvent): TIconButton;
+begin
+  Result := TIconButton.Create(Self);
   Result.Parent := Self;
   Result.BevelOuter := bvNone;
   Result.Caption := S;
-  Result.Color := COL_FIELD;
+  Result.Icon := AIcon;
+  Result.Tag := PtrInt(ABase);
+  Result.Color := ABase;
   Result.Font.Name := 'Segoe UI';
   Result.Font.Size := 9;
-  Result.Font.Color := COL_TEXT;
+  Result.Font.Color := BtnFontFor(ABase);
   Result.Cursor := crHandPoint;
   Result.SetBounds(X, Y, W, H);
   Result.OnClick := E;
   Result.OnMouseEnter := @BtnEnter;
   Result.OnMouseLeave := @BtnLeave;
+  Result.OnMouseDown := @BtnDown;
+  Result.OnMouseUp := @BtnUp;
 end;
 
 procedure TPanelForm.BtnEnter(Sender: TObject);
 begin
   if (Sender is TPanel) and TPanel(Sender).Enabled then
-    TPanel(Sender).Color := COL_FIELD_HI;
+    TPanel(Sender).Color := BrightenColor(TColor(TPanel(Sender).Tag), HOVER_AMOUNT);
 end;
 
 procedure TPanelForm.BtnLeave(Sender: TObject);
 begin
   if (Sender is TPanel) and TPanel(Sender).Enabled then
-    TPanel(Sender).Color := COL_FIELD;
+    TPanel(Sender).Color := TColor(TPanel(Sender).Tag);
+end;
+
+procedure TPanelForm.BtnDown(Sender: TObject; Button: TMouseButton;
+  Shift: TShiftState; X, Y: Integer);
+begin
+  if (Sender is TPanel) and TPanel(Sender).Enabled then
+    TPanel(Sender).Color := DarkenColor(TColor(TPanel(Sender).Tag), PRESS_AMOUNT);
+end;
+
+procedure TPanelForm.BtnUp(Sender: TObject; Button: TMouseButton;
+  Shift: TShiftState; X, Y: Integer);
+begin
+  if (Sender is TPanel) and TPanel(Sender).Enabled then
+    TPanel(Sender).Color := BrightenColor(TColor(TPanel(Sender).Tag), HOVER_AMOUNT);
+end;
+
+function TPanelForm.BtnFontFor(ABase: TColor): TColor;
+begin
+  if ABase = COL_BTN_CLOSE then
+    Result := COL_BG
+  else
+    Result := COL_TEXT;
 end;
 
 procedure TPanelForm.SetBtn(B: TPanel; AEnabled: Boolean);
@@ -644,13 +937,13 @@ begin
   B.Enabled := AEnabled;
   if AEnabled then
   begin
-    B.Color := COL_FIELD;
-    B.Font.Color := COL_TEXT;
+    B.Color := TColor(B.Tag);
+    B.Font.Color := BtnFontFor(TColor(B.Tag));
   end
   else
   begin
-    B.Color := COL_BG;
-    B.Font.Color := COL_MUTED;
+    B.Color := COL_BTN_DIS_BG;
+    B.Font.Color := COL_BTN_DIS_TEXT;
   end;
 end;
 
@@ -670,13 +963,24 @@ begin
   lblTarget.Caption := 'System copy: ' + TargetPath;
   lblSettings.Caption := 'Settings file: ' + Cfg.FilePath;
 
-  SetBtn(bInstall, not (f and r));
+  if f then
+  begin
+    bInstall.Caption := 'Reinstall';
+    bInstall.Icon := biReinstall;
+  end
+  else
+  begin
+    bInstall.Caption := 'Install';
+    bInstall.Icon := biInstall;
+  end;
+  SetBtn(bInstall, True);
   SetBtn(bUninstall, f);
   SetBtn(bRun, True);
   SetBtn(bSettings, True);
 
-  if f and r then
-    lblHint.Caption := 'Run starts the full-screen clock. Uninstall removes the system copy.'
+  if f then
+    lblHint.Caption := 'Run starts the full-screen clock. Reinstall replaces the system ' +
+      'copy with this version. Uninstall removes it.'
   else
     lblHint.Caption := 'Portable mode: Run and Settings work from this folder. ' +
       'Install copies the screensaver to the Windows system folder.';
@@ -685,7 +989,19 @@ end;
 procedure TPanelForm.DoInstall(Sender: TObject);
 var
   tmp: string;
+  wasInstalled: Boolean;
 begin
+  wasInstalled := FileInstalled;
+
+  // C: подтверждение только когда файл уже есть; фокус по умолчанию на No,
+  // закрытие крестиком = отмена
+  if wasInstalled then
+    if Application.MessageBox(
+      PChar('Do you want to reinstall Ridbowt Drift Clock?'),
+      PChar(PANEL_CAPTION),
+      MB_YESNO or MB_ICONQUESTION or MB_DEFBUTTON2) <> IDYES then
+      Exit;
+
   // .scr не имеет глагола runas — повышаем права через .exe-копию
   tmp := IncludeTrailingPathDelimiter(GetTempDir) + 'RidbowtDriftClock_setup.exe';
   if not CopyFileW(PWideChar(UTF8Decode(ParamStr(0))), PWideChar(UTF8Decode(tmp)), False) then
@@ -699,7 +1015,8 @@ begin
   Cfg.Load;
   RefreshState;
 
-  if FileInstalled and IsRegistered then
+  // D: системное окно открываем только после свежей установки
+  if (not wasInstalled) and FileInstalled and IsRegistered then
     OpenScreenSaverSettings(TargetPath);
 end;
 
@@ -710,7 +1027,8 @@ begin
   wFile := UTF8Decode(ParamStr(0));
   wPar := UTF8Decode('/s');
   ShellExecuteW(0, 'open', PWideChar(wFile), PWideChar(wPar), nil, 1);
-  Close;
+  // панель не закрываем: заставка (fsStayOnTop) сама накроет её,
+  // а после выхода из заставки панель останется доступной
 end;
 
 procedure TPanelForm.DoSettings(Sender: TObject);
@@ -730,6 +1048,15 @@ end;
 procedure TPanelForm.CloseClicked(Sender: TObject);
 begin
   Close;
+end;
+
+procedure TPanelForm.DoSysSettings(Sender: TObject);
+var
+  wFile, wPar: WideString;
+begin
+  wFile := UTF8Decode('control.exe');
+  wPar := UTF8Decode('desk.cpl,,@screensaver');
+  ShellExecuteW(0, 'open', PWideChar(wFile), PWideChar(wPar), nil, 1);
 end;
 
 procedure TPanelForm.Build;
@@ -754,13 +1081,15 @@ begin
   lblTarget := MkLabel('', Sc(16), Sc(68), Sc(528), Sc(18), True);
   lblSettings := MkLabel('', Sc(16), Sc(88), Sc(528), Sc(18), True);
 
-  bInstall := MkButton('Install', Sc(16), Sc(120), Sc(126), Sc(36), @DoInstall);
-  bRun := MkButton('Run', Sc(150), Sc(120), Sc(126), Sc(36), @DoRun);
-  bSettings := MkButton('Settings', Sc(284), Sc(120), Sc(126), Sc(36), @DoSettings);
-  bUninstall := MkButton('Uninstall', Sc(418), Sc(120), Sc(126), Sc(36), @DoUninstall);
+  bInstall := MkButton('Install', Sc(16), Sc(120), Sc(126), Sc(36), COL_BTN_INSTALL, biInstall, @DoInstall);
+  bRun := MkButton('Run', Sc(150), Sc(120), Sc(126), Sc(36), COL_BTN_RUN, biRun, @DoRun);
+  bSettings := MkButton('Settings', Sc(284), Sc(120), Sc(126), Sc(36), COL_BTN_SETTINGS, biSettings, @DoSettings);
+  bUninstall := MkButton('Uninstall', Sc(418), Sc(120), Sc(126), Sc(36), COL_BTN_UNINSTALL, biUninstall, @DoUninstall);
 
   lblHint := MkLabel('', Sc(16), Sc(170), Sc(528), Sc(44), True);
-  bClose := MkButton('Close', Sc(418), Sc(232), Sc(126), Sc(32), @CloseClicked);
+  bSysSettings := MkButton('Screen Saver Settings', Sc(16), Sc(232), Sc(170), Sc(32),
+    COL_FIELD, biSystem, @DoSysSettings);
+  bClose := MkButton('Close', Sc(418), Sc(232), Sc(126), Sc(32), COL_BTN_CLOSE, biClose, @CloseClicked);
 
   RefreshState;
 end;
